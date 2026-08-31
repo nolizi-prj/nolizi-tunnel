@@ -37,6 +37,9 @@ skip from a race into a certainty.
 > B-2 first asserted that a refused greeting must not contain the address
 > string, which the bind error legitimately does. Both were errors in the spec,
 > amended in the open and re-reviewed rather than edited by the builder.
+> Amendment 3 ([`../SPEC.md` §6.5](../SPEC.md)) gives each case a port block of
+> its own, because they shared one and raced each other's teardown. It changes
+> the fixture, not a single assertion below.
 
 ## The cases
 

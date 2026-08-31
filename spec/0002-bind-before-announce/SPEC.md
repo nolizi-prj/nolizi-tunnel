@@ -201,3 +201,43 @@ behind it is already true.
 
 **Amendment 2, 2026-08-31, before merge**, recorded here rather than folded
 silently into the build for the same reason as §6.1–6.3.
+
+### 6.5 · The suite's own fixture was the last flake left
+
+**Amendment 3, 2026-08-31, before merge.** Recorded here for the same reason as
+§6.1–§6.4, and because this one is about the acceptance suite rather than the
+relay: a frozen suite that flakes is the failure mode this item exists to end,
+and fixing it quietly inside the freeze would be the builder editing a case on
+its own judgement.
+
+The determinism protocol on the finished change measured **1 failure in 40**
+plain runs. The failure was not one of the three historical flaky tests and not
+the relay:
+
+```
+--- FAIL: TestPortReturnsToThePoolWhenTheBindFails (0.00s)
+    bindorder_test.go:438: could not occupy port 20500 for the test:
+    listen tcp 127.0.0.1:20500: bind: address already in use
+```
+
+B-5 could not set its *fixture* up. All six cases drew the same fixed port
+20500, and the harness closes the agent, ssh and local listeners but never the
+relay's public one — that is closed by `releaseTCP` when the relay notices the
+session ended, which is concurrent with the case's cleanup, not ordered before
+it. So B-5's `occupy` raced a listener the previous case was still closing.
+
+**Nothing about the relay changes, and no assertion is weakened.** The relay
+does release the port; it does not promise to have finished by the instant a
+test function returns, and nothing in §1 says it should. This is §6.2's error
+one more time — an execution that fails for something other than the defect
+the case names (L-006 from the other side).
+
+The fix is to remove the shared resource rather than wait on it:
+`bindOrderPorts(t)` hands each case a block of ten ports of its own, from the
+same below-ephemeral base. No sleep, no retry, no poll — the suite's claim to
+be free of timing assumptions survives, which a `time.Sleep` in `occupy` would
+have quietly spent.
+
+Re-measured after the fix, and the L-006 check re-run against the unfixed tree
+with the new harness so that the block allocation is not what turns a case red.
+Both numbers are in the merge commit.

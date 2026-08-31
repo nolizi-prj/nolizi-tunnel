@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,14 +32,15 @@ import (
 // fails for every session, which turns the ssh path's silent skip from a race
 // into a certainty.
 
-// bindOrderPorts is a range of its own, so these cases cannot collide with the
-// 34000-series harness in tcp_test.go.
+// These cases draw from a range of their own, so they cannot collide with the
+// 34000-series harness in tcp_test.go, and each case takes a block of it so
+// they cannot collide with each other either.
 const (
 	// Deliberately below /proc/sys/net/ipv4/ip_local_port_range's floor
 	// (32768 on this machine). A fixed test port inside the ephemeral range
 	// can be taken transiently by any outgoing connection on the host, which
 	// makes a bind failure look like the defect under test.
-	bindOrderPort = 20500
+	bindOrderBase = 20500
 	sshTCPUser    = "tcp+remotebox"
 
 	// sshGreetingMarker is the sentence sshGreet prints and sshTell does not,
@@ -53,6 +55,23 @@ const (
 	// that is not the trigger used here (SPEC 6.1).
 	lookupBreakingDomain = " pumasi.link"
 )
+
+// bindOrderPorts hands each case a block of ten ports of its own.
+//
+// These cases originally shared one fixed port. Nothing in the relay's contract
+// promises the public listener is closed by the time the case that opened it
+// returns: releaseTCP runs when the relay notices the agent session ended, and
+// that is concurrent with the case's own cleanup. So the next case's occupy()
+// could race a listener that was still closing and fail EADDRINUSE — on the
+// harness, not on the defect under test, 1 run in 40 (SPEC 6.5). Giving each
+// case a block of its own removes the shared resource rather than waiting on
+// it, so this stays a suite that never sleeps and never retries.
+var bindOrderCursor int32 = bindOrderBase
+
+func bindOrderPorts(t *testing.T) int {
+	t.Helper()
+	return int(atomic.AddInt32(&bindOrderCursor, 10)) - 10
+}
 
 // occupy holds a port for the duration of a test, so the relay's bind of the
 // same port is guaranteed to fail.
@@ -314,8 +333,9 @@ func echoThrough(addr, msg string) error {
 // over a public address, and takes it back — and that first answer is the
 // defect, because the agent and its user already have the address.
 func TestAgentIsNotToldAnAddressItCannotBeGiven(t *testing.T) {
-	occupy(t, bindOrderPort)
-	b := newBindOrderRelay(t, "pumasi.link", bindOrderPort, bindOrderPort)
+	port := bindOrderPorts(t)
+	occupy(t, port)
+	b := newBindOrderRelay(t, "pumasi.link", port, port)
 
 	frames := b.handshake(t, core.AuthRequest{Subdomain: "remotebox", TCP: true})
 	if len(frames) == 0 {
@@ -350,8 +370,9 @@ func TestAgentIsNotToldAnAddressItCannotBeGiven(t *testing.T) {
 // greeting is what a person sees, so an address in it is an address they will
 // use.
 func TestSSHIsNotToldAnAddressItCannotBeGiven(t *testing.T) {
-	occupy(t, bindOrderPort)
-	b := newBindOrderRelay(t, "pumasi.link", bindOrderPort, bindOrderPort)
+	port := bindOrderPorts(t)
+	occupy(t, port)
+	b := newBindOrderRelay(t, "pumasi.link", port, port)
 
 	greeting := b.sshGreeting(t, sshTCPUser)
 
@@ -362,7 +383,7 @@ func TestSSHIsNotToldAnAddressItCannotBeGiven(t *testing.T) {
 	// address it could not bind, so the bare string proves nothing (SPEC 6.2).
 	if strings.Contains(greeting, sshGreetingMarker) {
 		t.Errorf("the ssh terminal was given the tunnel announcement, but the "+
-			"relay could not bind port %d; greeting = %q", bindOrderPort, greeting)
+			"relay could not bind port %d; greeting = %q", port, greeting)
 	}
 	if !strings.Contains(greeting, "pumasi: ") || !strings.Contains(greeting, "binding public port") {
 		t.Errorf("the ssh terminal was not told the bind failed; greeting = %q", greeting)
@@ -373,7 +394,8 @@ func TestSSHIsNotToldAnAddressItCannotBeGiven(t *testing.T) {
 // paths used to make fails for every session, because core.SplitHost("x.", "")
 // is ErrForeignHost. The address announced must still be one that answers.
 func TestTCPOnlyRelayAnnouncesAnAddressThatAnswers(t *testing.T) {
-	b := newBindOrderRelay(t, lookupBreakingDomain, bindOrderPort, bindOrderPort+9)
+	port := bindOrderPorts(t)
+	b := newBindOrderRelay(t, lookupBreakingDomain, port, port+9)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -407,7 +429,8 @@ func TestTCPOnlyRelayAnnouncesAnAddressThatAnswers(t *testing.T) {
 // the bind when the lookup failed, said nothing about it in the log, and
 // greeted the terminal with the address anyway.
 func TestSSHTCPOnlyRelayNeverGreetsADeadAddress(t *testing.T) {
-	b := newBindOrderRelay(t, lookupBreakingDomain, bindOrderPort, bindOrderPort+9)
+	port := bindOrderPorts(t)
+	b := newBindOrderRelay(t, lookupBreakingDomain, port, port+9)
 
 	greeting := b.sshGreeting(t, sshTCPUser)
 
@@ -435,8 +458,9 @@ func TestSSHTCPOnlyRelayNeverGreetsADeadAddress(t *testing.T) {
 // B-5 · A refused bind must not strand the port. The pool believing a port is
 // in use while nothing listens on it cannot be recovered without a restart.
 func TestPortReturnsToThePoolWhenTheBindFails(t *testing.T) {
-	blocker := occupy(t, bindOrderPort)
-	b := newBindOrderRelay(t, "pumasi.link", bindOrderPort, bindOrderPort)
+	port := bindOrderPorts(t)
+	blocker := occupy(t, port)
+	b := newBindOrderRelay(t, "pumasi.link", port, port)
 
 	// First agent: the port is held, so it is refused.
 	b.handshake(t, core.AuthRequest{Subdomain: "first", TCP: true})
@@ -462,7 +486,8 @@ func TestPortReturnsToThePoolWhenTheBindFails(t *testing.T) {
 // must not drop the accept loop, the session wiring, or the byte pipe. The
 // address announced is the address that works.
 func TestAnnouncedAddressIsTheWorkingAddress(t *testing.T) {
-	b := newBindOrderRelay(t, "pumasi.link", bindOrderPort, bindOrderPort+9)
+	port := bindOrderPorts(t)
+	b := newBindOrderRelay(t, "pumasi.link", port, port+9)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
