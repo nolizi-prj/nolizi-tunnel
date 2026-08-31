@@ -4,8 +4,8 @@
 ([`pumasi-ops/roles/product-manager.md`](https://github.com/pumasi-ai/pumasi-ops/blob/main/roles/product-manager.md),
 duty 5). Seeded 2026-08-30 from candidate `0011-developer-tunnels.md`; first
 evaluation pass 2026-08-31 at `3652e15`; post-release evaluation 2026-08-31 at
-`83fd9f7`; **post-`0041` evaluation 2026-08-31 at `1d9505c`**, after the
-bind-before-announce merge.
+`83fd9f7`; post-`0041` evaluation 2026-08-31 at `1d9505c`; **post-`0047`
+evaluation 2026-08-31 at `b3d251d`**, after the test-port merge.
 
 One list, features and bugs together — a priority that cannot compare them is
 not a priority. Every entry points at its source and carries one line of
@@ -15,35 +15,40 @@ operator action rather than a build; the packet then takes the highest entry
 that *is* a build, and the operator item keeps its rank rather than being
 demoted for being unbuildable.
 
-> **Highest *build* entry: item 2** — the suite draws its TCP ports from inside
-> the kernel's ephemeral range. That is the next coder packet. Item 1 outranks
-> it and is **not** a build: it is operator action blocked on **Q-014**.
+> **Highest *build* entry: item 2** — the HTTP path hands a visitor's hostname
+> to the registry, and the agent its URL, before the session that serves that
+> URL exists. That is the next coder packet. Item 1 outranks it and is **not** a
+> build: it is operator action blocked on **Q-014**.
 
 Reordering is a commit with the reasoning in the message; the steward vetoes by
 reverting.
 
-**What changed in this pass, and why.** Item 2 of the previous order — the
-public TCP address announced before anything listens on it — **is delivered at
-`1d9505c`** and moves to *Delivered*, with the fix verified by measurement
-rather than by its commit message. But re-measuring it did not return the clean
-result the fix's own report recorded, and the difference is the substance of
-this pass:
+**What changed in this pass, and why.** The previous item 2 — the suite drawing
+its TCP ports from inside the kernel's ephemeral range — is **half delivered**
+at `b3d251d`. The half that landed is the whole of what made the gate
+unmeasurable, and the effect is large: on this machine `go test -count=1 ./...`
+went from **40 failures in 40** at `1d9505c` to **0 failures in 500** at
+`b3d251d`. The half that did not land is a latent fixture defect inside a frozen
+acceptance case; it is rewritten as item 9 rather than ticked, and the reason it
+did not land is a governance reading, not work. See item 9 and
+[`STAGE.md`](STAGE.md) §2.
 
-- **The fix works.** Measured against the ordering defect in isolation, on a
-  port range the host cannot steal, the race goes from **28 failures in 2000**
-  at `83fd9f7` to **0 in 2000** at `1d9505c`.
-- **The suite is still not deterministic, for a different reason that was
-  always there.** `relay/tcp_test.go` pins its TCP range to **34000–34099**,
-  which lies **inside** this machine's `/proc/sys/net/ipv4/ip_local_port_range`
-  (**32768–60999**). Any unrelated process holding one of those ports as an
-  outbound ephemeral source port takes it from the relay. On this host, on the
-  day of this pass, one did — so `go test -count=1 ./...` fails **every run**,
-  at both SHAs.
+Two things follow, and they are the substance of this pass:
 
-That second finding is new, it is not a regression from `0041`, and it is now
-item 2. It also means the Stage 1 gate's number is a property of the machine it
-was measured on; [`STAGE.md`](STAGE.md) §2 says so and records the evidence
-against **Q-024**.
+- **The gate is measurable again, and it is clean.** Every figure in this file
+  and in `STAGE.md` §2 was re-run by this seat at `b3d251d` on this host. The
+  run counts are stated beside every number, because a gate whose number is
+  inherited rather than measured is what produced the wrong 12-run reading that
+  raised **Q-024**.
+- **A new item enters at 2, and it is not the old flake renamed.** Job `0047`
+  reported two failures in 240 runs, both `TestConcurrentVisitors`, both
+  *"No tunnel is open for myapp.pumasi.link"*. That is the **HTTP** path, not the
+  TCP port collision. Reading `relay/relay.go` for the cause found an ordering
+  defect of exactly the class `spec/0002` was written to eliminate, still
+  present: `r.sessions[resp.AgentID]` is installed **after** the auth response is
+  written. This seat could not reproduce it (the runs are cited in item 2), so
+  the entry claims a code reading and a symptom that matches it, and does not
+  claim a reproduction.
 
 ---
 
@@ -77,57 +82,67 @@ Why here: it is the largest single gap between what this product is and what a
 stranger could use, it is the one item on this list every visitor to
 `pumasi.link` meets today, and it is not demoted for being unbuildable.
 
-**2 · The test suite draws its TCP ports from inside the kernel's ephemeral
-range, so the gate's number belongs to the machine and not to the code** —
-**the next coder packet.** Source: this evaluation, from re-measuring item 2 of
-the previous order and failing to reproduce a clean run at either SHA.
+**2 · The HTTP path hands out a URL before the session that serves it exists** —
+**the next coder packet.** Source: this evaluation, from reading `relay/relay.go`
+for the cause of the two `TestConcurrentVisitors` failures job `0047` measured in
+240 runs and reported as unranked.
 
-`relay/tcp_test.go:47–48` fixes the relay's pool at **34000–34099**;
-`relay/scheme_test.go:314–315` uses **34500–34599**. This machine's
-`/proc/sys/net/ipv4/ip_local_port_range` is **32768 60999**, so both blocks sit
-inside the range the kernel hands out as *source* ports for outgoing
-connections. `core.PortPool` starts its cursor at `low`
-(`core/portpool.go:43`, `cursor: low`), so a freshly built relay always
-draws **34000 first** — and every historical failure this file has ever
-recorded names that exact port.
+`ServeAgent` does four things in this order (`relay/relay.go:139`–`:216`):
 
-Measured during this pass:
+1. `authorize` calls `r.registry.Register(tunnel)` (`:295`) — **the hostname now
+   resolves**, and `ServeHTTP`'s `r.registry.Lookup` will find it (`:331`).
+2. the public TCP port is bound, if the tunnel asked for one (`:175`) — this is
+   `0041`'s fix and it is correctly placed.
+3. `r.writeFrame(conn, okFrame)` (`:205`) — **the agent, and its user, now have
+   the URL.**
+4. `r.sessions[resp.AgentID] = session` (`:213`–`:216`) — **only now can a
+   visitor be forwarded anywhere.**
 
-```
-$ cat /proc/sys/net/ipv4/ip_local_port_range
-32768	60999
+Between 3 and 4 a visitor who uses the URL gets past `Lookup`, finds
+`session == nil`, and is answered `404 No tunnel is open for <host>` by
+`notFound` (`:340`–`:344`, `:384`). That is the exact string `0047` recorded.
 
-$ ss -tanp | grep :34000
-ESTAB 0 0 127.0.0.1:34000 127.0.0.1:43461 users:(("workerd",pid=716041,fd=455))
-```
+**This is the same defect `spec/0002` §1 exists to forbid**, one path over.
+That spec's rule is *"when the client learns the outcome, the state behind it is
+already true"*, and `0041` applied it to the TCP listener — deliberately moving
+`serveTCP` after the announce while making the *bind* precede it, because a
+visitor arriving early waits in the accept queue. The mux session has no accept
+queue and no such argument: there is nothing between step 3 and step 4 that
+needs the response to have been sent, so the insert can simply move above it.
+The comment already on the `session == nil` branch — *"the agent went away
+between the lookup and here"* — describes only the teardown race and is a
+mis-reading of the other way that branch is reached.
 
-An unrelated process held 34000 for the whole of this evaluation, so the bind
-failed every time and the four TCP tests failed every run at both SHAs. The
-symptom differs by SHA, which is the fix working exactly as designed:
+**What this seat measured, and what it did not.** It did **not** reproduce the
+failure. At `b3d251d` on this host:
 
-| | `83fd9f7` (before) | `1d9505c` (after) |
-| :--- | :--- | :--- |
-| Failure | `dial tcp 127.0.0.1:34000: connect: connection refused` | `agent did not connect` (handshake refused) |
-| Where | the visitor's dial, *after* the address was announced | the handshake, *before* anything was announced |
+| Arm | Runs | Failures |
+| :--- | ---: | ---: |
+| `go test -count=1 ./...` | **500** | **0** |
+| `go test -count=1 -cover ./...` | **100** | **0** |
+| `tools/gate.sh` (whole gate, `SKIP_FAMILY_PROBE=1`) | **40** | **0** |
 
-**`0041` already knew about this hazard and fixed only its own half.**
-`relay/bindorder_test.go:39–43` sets `bindOrderBase = 20500` and says why, in
-the coder's own words: *"Deliberately below `/proc/sys/net/ipv4/ip_local_port_range`'s
-floor (32768 on this machine). A fixed test port inside the ephemeral range can
-be taken transiently by any outgoing connection on the host, which makes a bind
-failure look like the defect under test."* The comment at `:35–37` then says the
-new block was chosen so it *"cannot collide with the 34000-series harness in
-tcp_test.go"* — routing around the older tests rather than moving them. The new
-cases are safe; the three historical TCP tests and `scheme_test.go` are not.
+and a targeted probe of the window itself, driving the unmodified `relay` and
+`agent` packages from outside the repository — the method job `0042` used for
+the TCP race — dialling the edge at the earliest instant `OnConnect` can hand
+over the URL: **4,900 visitor requests, 0 answered `404`** (200 iterations × 20
+concurrent visitors; 500 single-visitor iterations; 400 more with the full suite
+looping alongside as load, which is the condition `0047` said the flake needs).
 
-Fix: move both blocks below 32768, as `bindorder_test.go` already does, or draw
-them from a port the OS has agreed to give up. **Fixer: the coder** (this seat
-may not edit tests). Why here, and why above the `beta` bar: it is two constants
-and a comment, it is the cheapest item on this list, and **until it lands nobody
-can measure the Stage 1 exit gate at all** — the gate's "passes 100%" is
-currently a statement about whether anything else on the host happened to be
-using a port. That is the question **Q-024** is open on, and this is what makes
-it answerable.
+So: **the defect is established by reading, its incidence on this host is below
+what ~5,400 attempts can detect, and `0047`'s two failures in 240 are the only
+observation of it.** The entry says that rather than claiming a reproduction.
+The window is a few instructions wide and widens under load, which is why a
+loaded CI machine sees it and this one did not.
+
+Why here, and why above the `beta` bar: the fix is to move one three-line block
+above one `writeFrame` call, it is the last identified source of
+non-determinism in the suite the Stage 1 gate names — which is what **Q-024**
+turns on — and it is a violation of a rule this product has already adopted and
+paid for once. Its user-facing cost today is small and this file will not
+inflate it: a person pastes a URL seconds after the agent prints it, not
+microseconds. **Fixer: the coder.** A frozen acceptance case that fails at
+`b3d251d` and passes after is what would make it more than a reading.
 
 **3 · A subdomain belongs to nobody, and nothing survives a relay restart** —
 source: `VALUE.md` claim 2, which sold "permanent" and "stable across
@@ -143,13 +158,16 @@ once. `--tcp-port` survives an *agent* reconnect, not a relay one.
 Why here: this is the `beta` bar itself (`STAGE.md` §4) and it is what retires
 **Q-014** — once a restart costs nobody their address, who may deploy stops
 being a steward question and becomes an ordinary one. It is the largest single
-piece of work on this list, which is why it sits below one two-constant fix
-rather than above it.
+piece of work on this list, which is why it sits below one three-line
+reordering rather than above it. Re-verified in the tree at `b3d251d`: all
+three facts below are unchanged by `0047`, which touched one test file.
 
 **4 · A public port the pool believes is free may not be bindable, and the
 relay gives up instead of taking the next one** — source: this evaluation,
-found while establishing why item 2 fails. This is the product-side half of
-item 2 and it is a different defect.
+found while establishing why the previous order's item 2 failed. It is the
+product-side half of that port-range defect — whose test-side half is now split
+between *Delivered* (`b3d251d`) and item 9 — and it is a different defect from
+both. Re-verified in the tree at `b3d251d`; `0047` changed no product code.
 
 `core.PortPool` is explicit that it *"does no I/O — it decides which number to
 use; binding the listener is the relay's job"* (`core/portpool.go:21–22`). So
@@ -171,14 +189,14 @@ read 2026-08-31 20:06 UTC), which is *below* the ephemeral floor. So the
 kernel cannot steal a port from the live relay, and the exposure there is only
 another process on the Vultr host binding into that block. The unbounded case
 is the operator who picks a range above 32768 with nothing to warn them, and
-the suite, which is item 2.
+the suite, whose remaining half is item 9.
 
 Why here: the failure is honest and self-healing since `1d9505c` — the agent is
 refused rather than lied to, and it retries — so this is robustness, not a
 falsehood on shipped surface, which is why it sits below item 3 rather than
 above it. But it is the reason a 100-port pool can be defeated by one busy port,
-and the range guard is a few lines that would have made item 2 impossible to
-write. **Fixer: the coder.**
+and the range guard is a few lines that would have made the previous order's
+item 2 impossible to write. **Fixer: the coder.**
 
 **5 · The console never offers the zero-install `ssh -R` command** — source:
 `VALUE.md` claim 1 against the live page. The ingress works: a banner grab on
@@ -187,6 +205,8 @@ command builder emits only `pumasi-tunnel --relay …` and its "First time here"
 panel offers only `git clone && go build` — so the product's headline claim, the
 one thing it does that needs nothing installed, is absent from the one page a
 visitor sees.
+Re-verified at `b3d251d`: `relay/dashboard.html` contains **0** occurrences of
+`ssh -R` and **1** of `git clone`.
 Why here: it is an afternoon's work on a page that is already live, and it
 converts the strongest differentiator from a README sentence into the thing you
 can paste. `MARKET.md` §2 makes that differentiator explicit and cited, which
@@ -199,6 +219,10 @@ raises what the omission costs.
 stream fan-out — and today the only thing exercising it is `relay`'s
 end-to-end tests, which use it as a fixture and assert on the relay's behaviour,
 not its. Reconnect and local-dial-failure have no case at all.
+Re-verified at `b3d251d`: the three packages still report *no test files*, and
+the 100 `-cover` runs of this pass put them at **0.0%** while `relay` rose to
+82.0% — that rise came from four existing tests running instead of aborting, not
+from any new coverage of `agent`.
 Why here: it is the coverage the Stage 1 number does not include, and item 3
 will rewrite reconnect behaviour — the tests should exist before that, not
 after.
@@ -207,11 +231,18 @@ after.
 [`PRODUCT-RULES.md` PR-1](https://github.com/pumasi-ai/pumasi/blob/worktree-product-rules/PRODUCT-RULES.md)
 (v1.0, 2026-08-30; **binds always, from the first commit**; read fresh this pass
 and **still only on the unmerged `worktree-product-rules` branch** — **Q-017** —
-and its absence from `main` is not compliance). This product has no version
-anywhere: no version file, no `/version`, nothing in the console footer, nothing
-in a release note. `core.AuthRequest.ClientVersion` exists as a field and no
-binary sets it.
-Why here: there are now **two** merges on `main` that behave differently from
+and its absence from `main` is not compliance — **re-checked this pass:
+`git ls-tree` finds it on neither `main` nor `origin/main`**). This product has
+no version anywhere: no version file, no `/version`, nothing in the console
+footer, nothing in a release note. Re-verified at `b3d251d`, with one detail
+that makes the fix smaller than it looks: **the repository root already has a
+`package.json`** — added so `pumasi/tools/gate.sh` step 1 finds a suite — and it
+has **no `version` field**, which is exactly where PR-1 says the one source of
+truth belongs. `core.AuthRequest.ClientVersion` exists as a field
+(`core/handshake.go:33`) and the only thing that ever sets it is
+`relay/sshingress.go:165`, which fills it with the *ssh client's* version string,
+not this product's.
+Why here: there are now **three** merges on `main` that behave differently from
 the build on the host, and **nothing on the console, in `/_pumasi/status` or in
 the logs says which one is answering**. That is `pumasi-booking`'s Q-012 problem
 arriving early, and here the answer is a few lines of Go plus a field already in
@@ -226,7 +257,59 @@ Why here: it **gates the `beta` promotion**, so it must be built before the
 label moves, and it is worth little before items 1–3 make the thing worth
 reporting on. The natural home is the console, where a visitor already is.
 
-**9 · `relay.New` accepts a `BaseDomain` that `core.NewRegistry` silently
+**9 · A frozen acceptance case still draws its port range from inside the
+kernel's ephemeral range — real, latent, and blocked on a governance reading
+rather than on work** — source: the residual half of the previous order's item
+2, which `b3d251d` did not land.
+
+`relay/scheme_test.go:314`–`:315` configures `TCPPortLow: 34500`,
+`TCPPortHigh: 34599`. This host's `/proc/sys/net/ipv4/ip_local_port_range` is
+**32768 60999**, so that block sits inside the range the kernel hands out as
+source ports for outgoing connections — the identical defect that `b3d251d`
+fixed in `relay/tcp_test.go`.
+
+**Why it did not land with the rest.** Those two lines are inside **A-10**,
+`TestSchemeChangesNothingButTheScheme` (`relay/scheme_test.go:295`), a frozen
+acceptance case of `spec/0001-public-scheme`. Job `0047` moved it using CHARTER
+§3 requirement 2's own named remedy — *"If the tests are wrong, amend the spec in
+the open and take a fresh cross-family spec review"* — wrote the amendment as
+SPEC 0001 §7, and got a fresh gemini spec review that approved it
+(`reviews/20260831-161500-spec-gemini.md`). The **code** review then objected,
+citing that same clause, on the ground that the *builder* authored the
+amendment. A cited objection governs and may not be argued past (CHARTER Part
+3), so the builder reverted the whole half — the A-10 fixture, SPEC 0001 §7, the
+`CASES.md` note and SPEC 0002 §6.6 — rather than proceed. The reviewers
+contradicted each other and each switched sides on the same clause across the
+two ranges; all four transcripts are committed. **The reading is open and is
+escalated, not decided here** — see the digest entry for this pass and
+[`STAGE.md`](STAGE.md) §3.1.
+
+**Why it ranks ninth, below item 3 and below everything buildable.** Two
+reasons, and the first is measured rather than argued:
+
+- **Its cost today is nothing, and this pass re-measured that rather than
+  carrying `0047`'s figure.** A-10 calls `relay.New` and reads
+  `Registry().PublicScheme()` back. `relay.New` passes the range to
+  `core.NewPortPool` (`relay/relay.go:124`), which is explicit that it *"does no
+  I/O"* (`core/portpool.go:21`–`:22`). **A-10 binds nothing.** And the block is
+  genuinely contended on this host right now — `ss -tanp` at 23:44 UTC found
+  **12 sockets** inside 34500–34599, including 34504, 34508, 34552, 34556 and
+  34560, all `workerd` — while the suite passed **500 runs out of 500**. A latent
+  defect that a contended range cannot provoke is a latent defect.
+- **Nothing a coder packet could take sits under it.** The work is one constant;
+  what blocks it is whether §3 requirement 2's remedy is available to a builder
+  at all, given that Part 3 requirement 1 has the builder authoring every spec in
+  the first place. Ranking it above a buildable item would point the next packet
+  at something that cannot be built without answering that first.
+
+Why here rather than lower: it is a real defect in a frozen file, and the day
+A-10 gains an assertion that binds — or `relay.New` gains a bind — it stops being
+latent silently. It sits beside item 10, the other entry on this list that is
+real, cheap and has no live consequence. **Fixer: the coder, once the reading
+resolves**; `SPEC 0002` §6.5 is the precedent on the permissive side, where the
+same builder amended a frozen fixture in the open and it stood.
+
+**10 · `relay.New` accepts a `BaseDomain` that `core.NewRegistry` silently
 normalises differently** — source: `0041`, found while verifying SPEC 6.1 and
 deliberately left out of its scope.
 
@@ -243,9 +326,12 @@ relay's domain is correct, the failure is loud and total rather than silent and
 partial once you look at any tunnel, and the tests that would catch a regression
 already exist. It is a validation asymmetry between two constructors, worth one
 guard in `relay.New`, and it does not belong near the top of a list whose top
-three items are a lie on the internet, an unmeasurable gate and the `beta` bar.
+three items are a lie on the internet, a URL announced before it can be served,
+and the `beta` bar. Re-verified at `b3d251d`: `lookupBreakingDomain` is still
+`relay/bindorder_test.go:56` and `relay.New` still tests only for the empty
+string.
 
-**10 · Client CLI: the interactive terminal UI** — source: the seeded item 5;
+**11 · Client CLI: the interactive terminal UI** — source: the seeded item 5;
 [`docs/ux/incumbent-ux-spec.md`](../docs/ux/incumbent-ux-spec.md) §273 for what
 the incumbents' status line shows. `cmd/pumasi-tunnel` prints logs; there is no
 live view of requests, response times or status codes, and no released binary
@@ -253,9 +339,9 @@ for macOS or Windows.
 Why here: it is polish on a path that works, and every item above it is either
 something untrue or something missing that a user would rely on.
 
-**11 · Local request inspector on `127.0.0.1:4040`** — source: the seeded item
-6; `VALUE.md` (where it is marked *not built*). `web/` is an empty directory;
-there is no listener, no SSE, no replay.
+**12 · Local request inspector on `127.0.0.1:4040`** — source: the seeded item
+6; `VALUE.md` (where it is marked *not built*). Re-verified at `b3d251d`: `web/`
+still contains **0** entries; there is no listener, no SSE, no replay.
 Why here: last of the build items. It is a whole second product surface, and the
 honest catalog page (`pumasi-web` `843bdef`) already tells visitors it does not
 exist, so nobody is being misled while it waits. `MARKET.md` §2 records that all
@@ -268,6 +354,45 @@ of anything above.
 
 Verified against the tree during this evaluation, not taken from commit
 subjects.
+
+- **The test suite's TCP harness moves below the kernel's ephemeral floor** —
+  delivered **`b3d251d`**. This was the *first half* of item 2 of the previous
+  order; the second half is item 9 above and is **not** delivered.
+
+  Verified in the tree: `relay/tcp_test.go:40` sets `tcpHarnessBase = 21000`,
+  and `tcpHarnessPorts` hands each harness a block of ten from an
+  `atomic.AddInt32` cursor — four harnesses, **21000–21039**, below the 32768
+  floor and clear of `bindOrderBase`'s 20500–20559. That is `bindorder_test.go`'s
+  existing scheme applied rather than a second one invented, and it is SPEC 0002
+  §6.5's finding (each case gets its own block) carried across to the older
+  harness. No product code changed.
+
+  **Verified by measurement, this seat's own, at `b3d251d` on this host.** The
+  host is the same one whose ephemeral range made the previous pass unmeasurable
+  — `/proc/sys/net/ipv4/ip_local_port_range` is still **32768 60999**, `workerd`
+  still held **127.0.0.1:34000** throughout, and `ss -tanp` found **12** sockets
+  inside 34500–34599. The suite no longer cares:
+
+  | Arm | Runs | Failures |
+  | :--- | ---: | ---: |
+  | `go test -count=1 ./...` (the gate's step 1, verbatim) | **500** | **0** |
+  | `go test -count=1 -cover ./...` | **100** | **0** |
+  | `tools/gate.sh`, whole gate, `SKIP_FAMILY_PROBE=1` | **40** | **40 × `GATE: PASS`** |
+
+  Against **40 failures in 40** at `1d9505c` on this same machine, recorded
+  above. `ss -tanp` found **0** sockets in 21000–21039 and **0** in 20500–20559,
+  which is the property the change was for.
+
+  **Coverage is measurable again, and it moved.** The previous pass could not
+  take a figure for `relay` at all — four of its tests aborted on a port
+  collision — and carried 74.7% as inherited. Re-measured here over the 100
+  `-cover` runs: `core` **80.3%**, `mux` **83.5%**, `relay` **82.0%**. `agent`,
+  `cmd/pumasi-relay` and `cmd/pumasi-tunnel` remain **0.0%** — item 6.
+
+  **What this does not do:** it does not retire **Q-024** (that is the steward's,
+  and `STAGE.md` §2 records the evidence without closing the window), it does not
+  fix item 9, and it is a third merged change waiting behind item 1's undeployed
+  restart.
 
 - **The public TCP address is bound before it is announced** — delivered
   **`1d9505c`** (`3480990` the relay change, `e40a224` the suite fixture),
@@ -299,8 +424,9 @@ subjects.
   suite-level figures the fix reported (0 in 40 of each invocation) did not
   reproduce here, and neither did the 3-in-40 baseline. `go test -count=1 ./...`
   failed **40 of 40** at `83fd9f7` and **40 of 40** at `1d9505c` on this
-  machine, for the ephemeral-port reason that is now item 2 and is not this
-  change's doing. See [`STAGE.md`](STAGE.md) §2.
+  machine, for the ephemeral-port reason that `b3d251d` has since fixed and
+  that was never this change's doing. Both figures are superseded by this pass:
+  see the entry below and [`STAGE.md`](STAGE.md) §2.
 - **Item 1, half (a) · The relay announces the scheme it actually serves** —
   delivered `83fd9f7` (2026-08-31 10:47), released as
   `pumasi/releases/2026-08-31-pumasi-tunnel-public-scheme.md`, **Q-020**, 7-day
@@ -337,11 +463,12 @@ subjects.
   `core/portpool_test.go`, `relay/tcp_test.go`. Live and load-bearing:
   `pumasi.link:20000` carries this machine's sshd (last measured at the `83fd9f7` pass; not re-measured here — this seat did not touch the live host). **Its
   announce-before-bind defect is delivered above; its bindability defect is
-  item 4 and its test-range defect is item 2.**
+  item 4, and its test-range defect is delivered at `b3d251d` for
+  `tcp_test.go` with a residual at item 9.**
 - **Seeded 5 · Client CLI, in part** — delivered `bf837ee`:
   `cmd/pumasi-tunnel` with `--relay`, `--subdomain`, `--token`, `--host`,
   `--tcp`, `--tcp-port`, `-v`, one static binary. *The interactive TUI and the
-  published macOS/Windows binaries are not delivered — item 10. The seed's
+  published macOS/Windows binaries are not delivered — item 11. The seed's
   `--http` and `--auth` do not exist: HTTP is the default and the flag is
   `--token`.*
 - **Not seeded, delivered anyway** — the relay console at the apex
