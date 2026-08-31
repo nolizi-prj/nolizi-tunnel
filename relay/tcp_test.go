@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +15,37 @@ import (
 	"github.com/pumasi-ai/pumasi-tunnel/core"
 	"github.com/pumasi-ai/pumasi-tunnel/relay"
 )
+
+// tcpHarnessBase is where this file's public TCP ports start, and each harness
+// takes a block of ten from it.
+//
+// It is below /proc/sys/net/ipv4/ip_local_port_range's floor for the reason
+// bindOrderBase in bindorder_test.go states once; that comment is the copy,
+// and this one points at it rather than forking it (L-007).
+//
+// What this file used before was 34000-34099, which is inside that range. On a
+// host where any process held 34000 as an outbound source port, every test in
+// this file failed every run: core.PortPool starts its cursor at low
+// (core/portpool.go), so each freshly built relay drew 34000 first and its
+// bind was refused. Measured on the packet's host, 2026-08-31: 5 failures in 5
+// runs, always the same four tests, with 127.0.0.1:34000 held by an unrelated
+// workerd process.
+//
+// The block per harness is the second half, and it is SPEC 0002 6.5's finding
+// applied here rather than rediscovered: the relay's public listener is closed
+// by releaseTCP when the relay notices the session ended, which is concurrent
+// with the test's own cleanup and not ordered before it. Four harnesses all
+// drawing the same first port would race each other's teardown for EADDRINUSE
+// on the fixture, not on anything under test.
+const tcpHarnessBase = 21000
+
+var tcpHarnessCursor int32 = tcpHarnessBase
+
+// tcpHarnessPorts hands the next harness a block of ten ports of its own.
+func tcpHarnessPorts() (low, high int) {
+	low = int(atomic.AddInt32(&tcpHarnessCursor, 10)) - 10
+	return low, low + 9
+}
 
 // tcpHarness runs a relay with a TCP port range, an agent asking for a raw
 // TCP tunnel, and a local line-oriented server standing in for sshd. Every
@@ -41,11 +73,13 @@ func newTCPHarness(t *testing.T, serve func(net.Conn)) *tcpHarness {
 		}
 	}()
 
+	// The harness needs one free port; the block of ten is so that harnesses
+	// do not race each other's teardown, not so that any of them uses ten.
+	tcpLow, tcpHigh := tcpHarnessPorts()
 	r, err := relay.New(relay.Config{
-		BaseDomain: "pumasi.link",
-		// A high, unprivileged range; the test only needs one free port.
-		TCPPortLow:  34000,
-		TCPPortHigh: 34099,
+		BaseDomain:  "pumasi.link",
+		TCPPortLow:  tcpLow,
+		TCPPortHigh: tcpHigh,
 		TCPBindHost: "127.0.0.1",
 		PublicHost:  "127.0.0.1",
 	})
