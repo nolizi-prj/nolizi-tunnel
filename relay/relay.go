@@ -159,21 +159,51 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 		return
 	}
 
-	resp, err := r.authorize(req)
+	resp, tcpPort, err := r.authorize(req)
 	if err != nil {
 		r.writeFrame(conn, core.ErrorFrame(err.Error()))
 		r.log.Info("agent refused", "error", err, "peer", conn.RemoteAddr(), "requested", req.Subdomain)
 		return
 	}
 
+	// Bind before the address leaves. The auth response carries TCPAddr, and
+	// until the listener exists that string names nothing — so a bind failure
+	// has to be the answer to the handshake rather than a correction sent
+	// after the agent, and its user, already had a public address (spec/0002).
+	var listener *tcpListener
+	if resp.TCPAddr != "" {
+		listener, err = r.listenTCP(resp.AgentID, tcpPort)
+		if err != nil {
+			r.log.Error("could not bind the public tcp port", "error", err)
+			// Give the name and the port up before saying so, for the same
+			// reason the bind comes before the announce: when the client learns
+			// the outcome, the state behind it is already true. Telling it
+			// first leaves a window in which the pool has released the port
+			// (listenTCP does that) while the registry still records it, and
+			// the next agent to ask is refused a port that is free.
+			r.registry.UnregisterAgent(resp.AgentID)
+			r.writeFrame(conn, core.ErrorFrame(err.Error()))
+			return
+		}
+	}
+
+	// From here a failure has to undo the listener too, or the port is held by
+	// a tunnel that never opened.
+	abandon := func() {
+		if listener != nil {
+			r.releaseTCP(resp.AgentID)
+		}
+		r.registry.UnregisterAgent(resp.AgentID)
+	}
+
 	okFrame, err := core.EncodeAuthResponse(resp)
 	if err != nil {
 		r.log.Error("could not encode auth response", "error", err)
-		r.registry.Unregister(resp.Subdomain)
+		abandon()
 		return
 	}
 	if err := r.writeFrame(conn, okFrame); err != nil {
-		r.registry.Unregister(resp.Subdomain)
+		abandon()
 		return
 	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
@@ -185,21 +215,11 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 	r.sessions[resp.AgentID] = session
 	r.mu.Unlock()
 
-	// The port was reserved during the handshake; bind it now that there is a
-	// session to forward into.
-	if resp.TCPAddr != "" {
-		tunnel, lookupErr := r.registry.Lookup(resp.Subdomain + "." + r.cfg.BaseDomain)
-		if lookupErr != nil {
-			r.log.Error("tcp tunnel vanished before binding", "error", lookupErr)
-		} else if err := r.bindTCP(session, resp.AgentID, resp.Subdomain, tunnel.TCPPort); err != nil {
-			// The agent believes it has a public port, so tell it plainly
-			// rather than leaving it to wonder why nothing arrives.
-			r.log.Error("could not bind the public tcp port", "error", err)
-			r.writeFrame(conn, core.ErrorFrame(err.Error()))
-			r.registry.UnregisterAgent(resp.AgentID)
-			session.Close()
-			return
-		}
+	// The socket has been answering since before the announce; start draining
+	// it now that there is a session to forward into. A visitor that arrived
+	// in between waited in the accept queue and is served here.
+	if listener != nil {
+		go r.serveTCP(session, listener, resp.Subdomain)
 	}
 
 	r.log.Info("tunnel open",
@@ -221,25 +241,30 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 	<-session.CloseChan()
 }
 
-// authorize validates the request, picks a name, and registers the tunnel.
-func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, error) {
+// authorize validates the request, picks a name, and registers the tunnel. It
+// returns the public TCP port it allocated, or 0 for a request that asked for
+// none. That port is returned rather than looked up again from the registry
+// because the caller has to bind it before it announces the address, and a
+// second route to a number the caller already holds is a place for the two to
+// disagree — which is exactly what it used to do (spec/0002, L-007).
+func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, error) {
 	if err := r.cfg.Auth.Authorize(req); err != nil {
-		return core.AuthResponse{}, err
+		return core.AuthResponse{}, 0, err
 	}
 
 	agentID, err := newAgentID()
 	if err != nil {
-		return core.AuthResponse{}, fmt.Errorf("relay: could not mint an agent id: %w", err)
+		return core.AuthResponse{}, 0, fmt.Errorf("relay: could not mint an agent id: %w", err)
 	}
 
 	name := req.Subdomain
 	if name == "" {
 		name, err = core.AllocateSubdomain(r.registry, nil)
 		if err != nil {
-			return core.AuthResponse{}, err
+			return core.AuthResponse{}, 0, err
 		}
 	} else if err := core.ValidateSubdomain(name); err != nil {
-		return core.AuthResponse{}, err
+		return core.AuthResponse{}, 0, err
 	}
 
 	tunnel := core.Tunnel{
@@ -261,7 +286,7 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, error) {
 	if req.TCP {
 		port, err := r.allocateTCPPort(agentID, req.TCPPort)
 		if err != nil {
-			return core.AuthResponse{}, err
+			return core.AuthResponse{}, 0, err
 		}
 		tunnel.TCPPort = port
 		resp.TCPAddr = fmt.Sprintf("%s:%d", r.cfg.PublicHost, port)
@@ -271,9 +296,9 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, error) {
 		if tunnel.TCPPort != 0 {
 			r.pool.Release(tunnel.TCPPort)
 		}
-		return core.AuthResponse{}, err
+		return core.AuthResponse{}, 0, err
 	}
-	return resp, nil
+	return resp, tunnel.TCPPort, nil
 }
 
 func (r *Relay) writeFrame(w io.Writer, f core.Frame) error {

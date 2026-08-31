@@ -51,25 +51,30 @@ func (r *Relay) allocateTCPPort(agentID string, requested int) (int, error) {
 	return r.pool.Allocate(agentID)
 }
 
-// bindTCP binds an already-allocated port and serves it until the agent's
-// session ends.
-func (r *Relay) bindTCP(session tunnelSession, agentID, subdomain string, port int) error {
+// listenTCP binds an already-allocated public port. After it returns, the
+// address is real: a visitor dialling it completes a TCP handshake and waits
+// in the accept queue.
+//
+// This is deliberately separate from serving it. Binding needs only the port;
+// forwarding needs a session, and on the agent path the session cannot exist
+// until the handshake response has been written — mux.Server starts reading
+// the connection immediately. Splitting the two is what lets the address be
+// bound before it is announced, rather than shortly after (spec/0002).
+func (r *Relay) listenTCP(agentID string, port int) (*tcpListener, error) {
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", r.cfg.TCPBindHost, port))
 	if err != nil {
 		// Hand the port back rather than leaking it: a port the pool believes
 		// is in use but nothing is listening on is unrecoverable without a
 		// restart.
 		r.pool.Release(port)
-		return fmt.Errorf("relay: binding public port %d: %w", port, err)
+		return nil, fmt.Errorf("relay: binding public port %d: %w", port, err)
 	}
 
 	listener := &tcpListener{port: port, ln: ln, agentID: agentID}
 	r.mu.Lock()
 	r.tcpListeners[agentID] = append(r.tcpListeners[agentID], listener)
 	r.mu.Unlock()
-
-	go r.serveTCP(session, listener, subdomain)
-	return nil
+	return listener, nil
 }
 
 // serveTCP accepts visitors on a public port and gives each one a stream.

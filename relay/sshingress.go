@@ -159,7 +159,7 @@ func (r *Relay) ServeSSH(nConn net.Conn, hostKey ssh.Signer) {
 	opts := parseSSHUser(sshConn.User())
 	session := &sshSession{conn: sshConn, closed: make(chan struct{})}
 
-	resp, err := r.authorize(core.AuthRequest{
+	resp, tcpPort, err := r.authorize(core.AuthRequest{
 		Subdomain:     opts.Subdomain,
 		TCP:           opts.TCP,
 		ClientVersion: string(sshConn.ClientVersion()),
@@ -176,15 +176,21 @@ func (r *Relay) ServeSSH(nConn net.Conn, hostKey ssh.Signer) {
 	r.sessions[resp.AgentID] = session
 	r.mu.Unlock()
 
+	// Bind before the greeting is composed. This path already bound first; what
+	// it also did was look the port up again through the registry and skip the
+	// bind entirely — no else, no log — when that lookup failed, greeting the
+	// terminal with an address nothing was listening on. The port now comes
+	// back from authorize, so there is no lookup left to fail (spec/0002).
 	if resp.TCPAddr != "" {
-		tunnel, lookupErr := r.registry.Lookup(resp.Subdomain + "." + r.cfg.BaseDomain)
-		if lookupErr == nil {
-			if err := r.bindTCP(session, resp.AgentID, resp.Subdomain, tunnel.TCPPort); err != nil {
-				r.sshTell(chans, "pumasi: "+err.Error())
-				r.registry.UnregisterAgent(resp.AgentID)
-				return
-			}
+		listener, err := r.listenTCP(resp.AgentID, tcpPort)
+		if err != nil {
+			r.log.Error("could not bind the public tcp port", "error", err, "via", "ssh")
+			// Released before the terminal is told, as on the agent path.
+			r.registry.UnregisterAgent(resp.AgentID)
+			r.sshTell(chans, "pumasi: "+err.Error())
+			return
 		}
+		go r.serveTCP(session, listener, resp.Subdomain)
 	}
 
 	address := resp.URL
