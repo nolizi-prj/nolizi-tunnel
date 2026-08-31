@@ -16,7 +16,44 @@ var (
 	ErrNameTaken     = errors.New("core: subdomain already registered")
 	ErrEmptyHost     = errors.New("core: empty host")
 	ErrNestedSubname = errors.New("core: nested subdomains are not routable")
+	ErrUnknownScheme = errors.New("core: public scheme must be http or https")
 )
+
+// The schemes a tunnel's public address may be announced under.
+//
+// Which one is true is not something this process can observe. The relay does
+// not terminate TLS — see the package header of cmd/pumasi-relay, which
+// explains why — so whether a visitor can reach https://<name>.<domain>
+// depends on what an operator put in front of it. It is therefore configured,
+// once, and read from here by everything that shows a person an address.
+const (
+	SchemeHTTP  = "http"
+	SchemeHTTPS = "https"
+)
+
+// ParsePublicScheme normalises an operator-supplied scheme, and is the only
+// place the legal set is written down.
+//
+// Spelling is forgiven — case, surrounding space, and a trailing "://" that a
+// person naturally types. The empty string means "not configured" and becomes
+// http, because http is what the relay serves with nothing in front of it:
+// an unset value must under-promise, never over-promise. Anything else is
+// ErrUnknownScheme, and the caller is expected to refuse to start rather than
+// pick one, since picking one is the defect this exists to prevent.
+func ParsePublicScheme(s string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	v = strings.TrimSuffix(v, "://")
+	switch v {
+	case "":
+		return SchemeHTTP, nil
+	case SchemeHTTP:
+		return SchemeHTTP, nil
+	case SchemeHTTPS:
+		return SchemeHTTPS, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownScheme, s)
+	}
+}
 
 // SplitHost reduces a request's Host header to the tunnel label beneath
 // baseDomain. It lowercases, drops any port, tolerates a trailing root dot,
@@ -101,7 +138,8 @@ type Tunnel struct {
 // concurrent use: the relay registers from its control loop while serving
 // requests on many goroutines.
 type Registry struct {
-	baseDomain string
+	baseDomain   string
+	publicScheme string
 
 	mu      sync.RWMutex
 	byName  map[string]Tunnel
@@ -110,18 +148,33 @@ type Registry struct {
 }
 
 // NewRegistry returns an empty registry rooted at baseDomain (e.g.
-// "pumasi.link").
-func NewRegistry(baseDomain string) *Registry {
+// "pumasi.link"), announcing addresses under publicScheme.
+//
+// publicScheme is expected to have come from ParsePublicScheme already — the
+// relay validates it at startup so an operator hears about a typo there
+// rather than in the addresses it hands out. Given anything else this falls
+// back to http rather than interpolating it: the registry fails closed to the
+// scheme the relay actually serves, because an address nobody can reach is
+// exactly what this field exists to stop it printing.
+func NewRegistry(baseDomain, publicScheme string) *Registry {
+	scheme, err := ParsePublicScheme(publicScheme)
+	if err != nil {
+		scheme = SchemeHTTP
+	}
 	return &Registry{
-		baseDomain: strings.ToLower(strings.TrimSuffix(strings.TrimSpace(baseDomain), ".")),
-		byName:     make(map[string]Tunnel),
-		byTCP:      make(map[int]string),
-		byAgent:    make(map[string][]string),
+		baseDomain:   strings.ToLower(strings.TrimSuffix(strings.TrimSpace(baseDomain), ".")),
+		publicScheme: scheme,
+		byName:       make(map[string]Tunnel),
+		byTCP:        make(map[int]string),
+		byAgent:      make(map[string][]string),
 	}
 }
 
 // BaseDomain reports the domain tunnels are published under.
 func (r *Registry) BaseDomain() string { return r.baseDomain }
+
+// PublicScheme reports the scheme addresses are announced under.
+func (r *Registry) PublicScheme() string { return r.publicScheme }
 
 // Register adds a tunnel. The subdomain must already be valid — which means
 // lowercase, since ValidateSubdomain refuses any other case — and free. A
@@ -251,9 +304,12 @@ func (r *Registry) Has(subdomain string) bool {
 	return ok
 }
 
-// PublicURL is the address a caller reaches a tunnel on.
+// PublicURL is the address a caller reaches a tunnel on, and is the single
+// place a scheme is put in front of a tunnel hostname. The CLI's first line of
+// output, the console's link, and the ssh ingress banner all show this string;
+// none of them builds its own, so all three move together or not at all.
 func (r *Registry) PublicURL(subdomain string) string {
-	return "https://" + strings.ToLower(subdomain) + "." + r.baseDomain
+	return r.publicScheme + "://" + strings.ToLower(subdomain) + "." + r.baseDomain
 }
 
 func removeString(haystack []string, needle string) []string {

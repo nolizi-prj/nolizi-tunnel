@@ -5,6 +5,13 @@
 // a reverse proxy that holds the wildcard certificate. Keeping certificate
 // handling out of the relay means an operator can choose ACME, a purchased
 // certificate, or none at all on a private network.
+//
+// Because that choice is made outside this process, the relay cannot observe
+// it — so -public-scheme is how it is told. It defaults to http, which is what
+// this binary serves on its own; an operator who put a terminator in front
+// passes -public-scheme=https, and every address the relay announces says so
+// at once. Announcing https with nothing listening on 443 is the one thing
+// this flag exists to stop.
 package main
 
 import (
@@ -35,6 +42,7 @@ func main() {
 		sshAddr    = flag.String("ssh-addr", "", "address for zero-install ssh tunnelling, e.g. :2222 (empty disables it)")
 		hostKey    = flag.String("ssh-hostkey", "/var/lib/pumasi-relay/ssh_host_ed25519_key", "path to the relay's ssh host key; generated if absent")
 		publicHost = flag.String("public-host", "", "hostname visitors dial for raw TCP (defaults to -domain)")
+		pubScheme  = flag.String("public-scheme", "http", "scheme tunnel addresses are announced under: http, or https when a TLS terminator sits in front of this relay")
 		verbose    = flag.Bool("v", false, "log every routing decision")
 	)
 	flag.Parse()
@@ -52,6 +60,7 @@ func main() {
 		TCPPortHigh:     *tcpHigh,
 		TCPBindHost:     *tcpBind,
 		PublicHost:      *publicHost,
+		PublicScheme:    *pubScheme,
 		AgentPublicPort: *agentAddr,
 	})
 	if err != nil {

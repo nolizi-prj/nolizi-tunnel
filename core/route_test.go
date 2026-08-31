@@ -63,7 +63,7 @@ func TestSplitHost(t *testing.T) {
 // falling through to tunnel "a" would let one tenant serve content under a
 // name a visitor reads as belonging to another.
 func TestSplitHostRefusesNestedEvenWhenParentRegistered(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if err := r.Register(Tunnel{Subdomain: "myapi", AgentID: "agent-1"}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestSplitHostRefusesNestedEvenWhenParentRegistered(t *testing.T) {
 }
 
 func TestRegistryRegisterAndLookup(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	tunnel := Tunnel{Subdomain: "myapi", AgentID: "agent-1", LocalPort: 3000}
 	if err := r.Register(tunnel); err != nil {
 		t.Fatalf("Register: %v", err)
@@ -86,7 +86,10 @@ func TestRegistryRegisterAndLookup(t *testing.T) {
 	if got.AgentID != "agent-1" || got.LocalPort != 3000 {
 		t.Errorf("got %+v, want agent-1/3000", got)
 	}
-	if url := r.PublicURL("myapi"); url != "https://myapi.pumasi.link" {
+	// http, not https: this registry was built with SchemeHTTP, and until
+	// 2026-08-31 this line asserted https unconditionally — the defect itself,
+	// written down as an expectation. Spec 0001 A-1/A-2 cover both schemes.
+	if url := r.PublicURL("myapi"); url != "http://myapi.pumasi.link" {
 		t.Errorf("PublicURL = %q", url)
 	}
 	if !r.Has("MYAPI") {
@@ -98,7 +101,7 @@ func TestRegistryRegisterAndLookup(t *testing.T) {
 }
 
 func TestRegistryRejectsDuplicateName(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if err := r.Register(Tunnel{Subdomain: "myapi", AgentID: "a"}); err != nil {
 		t.Fatalf("first Register: %v", err)
 	}
@@ -112,7 +115,7 @@ func TestRegistryRejectsDuplicateName(t *testing.T) {
 // caller error rather than a silent rewrite. Lookup stays case-insensitive
 // because a Host header's case is not the caller's choice.
 func TestRegistryRegisterRequiresNormalisedName(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if err := r.Register(Tunnel{Subdomain: "MyApi", AgentID: "a"}); !errors.Is(err, ErrSubdomainCharset) {
 		t.Fatalf("got %v, want ErrSubdomainCharset", err)
 	}
@@ -122,7 +125,7 @@ func TestRegistryRegisterRequiresNormalisedName(t *testing.T) {
 }
 
 func TestRegistryRejectsInvalidName(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if err := r.Register(Tunnel{Subdomain: "admin"}); !errors.Is(err, ErrSubdomainReserved) {
 		t.Errorf("reserved: got %v", err)
 	}
@@ -132,14 +135,14 @@ func TestRegistryRejectsInvalidName(t *testing.T) {
 }
 
 func TestRegistryUnknownHost(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if _, err := r.Lookup("nobody.pumasi.link"); !errors.Is(err, ErrNoTunnel) {
 		t.Errorf("got %v, want ErrNoTunnel", err)
 	}
 }
 
 func TestRegistryTCPPorts(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if err := r.Register(Tunnel{Subdomain: "database", AgentID: "a", TCPPort: 20001, LocalPort: 5432}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -168,7 +171,7 @@ func TestRegistryTCPPorts(t *testing.T) {
 }
 
 func TestRegistryUnregisterReleasesNameAndPort(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	if err := r.Register(Tunnel{Subdomain: "myapi", AgentID: "a", TCPPort: 20002}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -192,7 +195,7 @@ func TestRegistryUnregisterReleasesNameAndPort(t *testing.T) {
 // path that runs when a laptop closes, and a leak here would slowly consume
 // the namespace.
 func TestRegistryUnregisterAgent(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	for _, name := range []string{"one", "two", "three"} {
 		if err := r.Register(Tunnel{Subdomain: name, AgentID: "agent-1"}); err != nil {
 			t.Fatalf("Register %s: %v", name, err)
@@ -217,7 +220,7 @@ func TestRegistryUnregisterAgent(t *testing.T) {
 // The relay registers from its control loop while serving requests on many
 // goroutines; run with -race to make this meaningful.
 func TestRegistryConcurrentAccess(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	const agents = 16
 
 	var wg sync.WaitGroup
@@ -244,7 +247,7 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 }
 
 func TestRegistryBaseDomainNormalised(t *testing.T) {
-	r := NewRegistry("  Pumasi.Link.  ")
+	r := NewRegistry("  Pumasi.Link.  ", SchemeHTTP)
 	if r.BaseDomain() != "pumasi.link" {
 		t.Fatalf("BaseDomain = %q", r.BaseDomain())
 	}
@@ -338,7 +341,7 @@ func TestGenerateSubdomainRealRandomnessIsValid(t *testing.T) {
 }
 
 func TestAllocateSubdomainSkipsTakenNames(t *testing.T) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	source := &seqRand{}
 
 	first, err := AllocateSubdomain(r, source)
@@ -370,7 +373,7 @@ func TestAllocateSubdomainPropagatesSourceFailure(t *testing.T) {
 }
 
 func BenchmarkRegistryLookup(b *testing.B) {
-	r := NewRegistry("pumasi.link")
+	r := NewRegistry("pumasi.link", SchemeHTTP)
 	for i := 0; i < 1000; i++ {
 		if err := r.Register(Tunnel{Subdomain: fmt.Sprintf("tunnel%04d", i), AgentID: "a"}); err != nil {
 			b.Fatal(err)

@@ -63,6 +63,12 @@ type Config struct {
 	// PublicHost is the address a visitor dials for raw TCP, reported to the
 	// agent so the CLI can print it. Defaults to BaseDomain.
 	PublicHost string
+	// PublicScheme is the scheme HTTP tunnel addresses are announced under —
+	// core.SchemeHTTP, or core.SchemeHTTPS when a TLS terminator sits in
+	// front of this relay. Empty means http, which is what the relay serves
+	// on its own. New refuses anything else rather than announcing a scheme
+	// the relay cannot honour.
+	PublicScheme string
 	// AgentPublicPort is the port agents dial, shown by the console's command
 	// builder so a person can copy a command that actually works. Display
 	// only — the listener's address is the caller's business.
@@ -99,10 +105,17 @@ func New(cfg Config) (*Relay, error) {
 	if cfg.PublicHost == "" {
 		cfg.PublicHost = cfg.BaseDomain
 	}
+	// Validated here, at startup, so an operator's typo is a refusal to start
+	// rather than an address handed to every user of this relay.
+	scheme, err := core.ParsePublicScheme(cfg.PublicScheme)
+	if err != nil {
+		return nil, err
+	}
+	cfg.PublicScheme = scheme
 
 	r := &Relay{
 		cfg:          cfg,
-		registry:     core.NewRegistry(cfg.BaseDomain),
+		registry:     core.NewRegistry(cfg.BaseDomain, cfg.PublicScheme),
 		log:          cfg.Logger,
 		sessions:     make(map[string]tunnelSession),
 		tcpListeners: make(map[string][]*tcpListener),

@@ -1,0 +1,8 @@
+{
+  "name": "pumasi-tunnel",
+  "private": true,
+  "description": "Not a Node project. This file exists so that pumasi/tools/gate.sh -- the charter's executable merge gate, whose step 1 runs `npm test` -- runs this repository's real suite instead of failing on a missing package.json. There is no JavaScript here, no dependencies, and no build step: the product is one static Go binary. The command below is the whole of it.",
+  "scripts": {
+    "test": "go test -count=1 ./..."
+  }
+}
