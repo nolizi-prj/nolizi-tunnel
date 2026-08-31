@@ -267,3 +267,14 @@ contradicts a file.
 4. **Nothing public may say the `https://` problem is fixed for users.** It is
    fixed on `main` and not on the internet (§1), and the distinction is the
    whole of this file's §1.
+5. **`STAGE_PLAYBOOK.md` Event 3 is held, not fired.** That trigger chains a
+   stage-promotion announcement and a public badge update off a product manager
+   confirming an exit gate `MET`. This evaluation kept Stage 1 at `MET`, but on
+   a suite that fails **3 runs in 40** in its ordinary invocation (§3.1), so no
+   promotion announcement should be published off that reading while the rate is
+   non-zero. Nothing is lost by waiting: this product is `alpha`, is not asking
+   to move, and §4 lists three separate reasons it should not. The reading
+   itself is escalated as `pumasi/DECISIONS.md` **Q-024**, with the strict
+   alternative and its cost written out; the rate is re-measured at each
+   evaluation rather than inherited, which is what produced the wrong 12-run
+   number in the first place.
