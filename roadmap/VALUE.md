@@ -3,8 +3,9 @@
 **Owned by the product-manager role**
 ([`pumasi-ops/roles/product-manager.md`](https://github.com/pumasi-ai/pumasi-ops/blob/main/roles/product-manager.md),
 duty 2). Seeded 2026-08-30; honest pass 2026-08-31 at `3652e15`;
-**post-release pass 2026-08-31 at `83fd9f7`**, after the `-public-scheme` merge
-(**Q-020**), each claim re-checked against the tree and the live relay. Every
+post-release pass 2026-08-31 at `83fd9f7`; **post-`0041` pass 2026-08-31 at
+`1d9505c`**, which lifted claim 3's bound (below) and re-read the live relay at
+20:06 UTC. Each claim is re-checked against the tree and the live relay. Every
 claim carries what would falsify it, and the ones that are false or bounded say
 so.
 
@@ -40,7 +41,7 @@ HTTPS as the ordinary case, and its free stable name is *unclaimed* rather than
 
 A tunnel opens with `ssh -R` from any machine that has an ssh client, with no
 download and no account (`3652e15`, `relay/sshingress.go`).
-*Evidence 2026-08-31 16:21 UTC:* `pumasi.link:2222` answers
+*Evidence, re-read 2026-08-31 20:06 UTC:* `pumasi.link:2222` answers
 `SSH-2.0-pumasi-tunnel`.
 *Falsified by:* an ordinary OpenSSH client that cannot open a tunnel and read
 its public address from the banner; or an account, key registration or download
@@ -74,9 +75,10 @@ until [`BACKLOG.md`](BACKLOG.md) item 3 lands.
 
 A public TCP port forwards bytes with nothing parsed and no client-side helper
 (`a13e586`, `relay/tcp.go`), including protocols where the server speaks first.
-*Evidence 2026-08-31 16:21 UTC:* `pumasi.link:20000` has carried this machine's
-own sshd for **36 167 s — 10 h 2 m — unbroken**, and it is how `m-gtr` is
-reached (`pumasi-ops/RESOURCES.md` §4).
+*Evidence, re-read 2026-08-31 20:06 UTC:* `pumasi.link:20000` has carried this
+machine's own sshd for **49 671 s — 13 h 48 m — unbroken**
+(`"opened_at":"2026-08-31T06:18:13Z"`), and it is how `m-gtr` is reached
+(`pumasi-ops/RESOURCES.md` §4).
 *What makes it a differentiator, cited:* an untimed raw TCP tunnel with no
 account and no card is not offered by any of the three comparators on a free
 tier — Pinggy includes free TCP but times the session out at 60 minutes,
@@ -84,17 +86,24 @@ LocalXpose excludes TCP from its free Starter tier entirely, and ngrok's free
 TCP requires credit-card verification ([`MARKET.md`](MARKET.md) §1, §3).
 *Falsified by:* a protocol that survives a direct connection but not this one;
 or a session dropped by a timer rather than by one of its ends.
-**Bounded by:** the announce-before-bind race, [`BACKLOG.md`](BACKLOG.md)
-item 2 — measured this pass at 3 failures in 40 runs *in both* test invocations.
-The address is handed out before the listener exists, so this claim is
-intermittently false in the first instant of a tunnel's life. It is the best
-claim here and it still has a hole in it.
+**Was bounded by the announce-before-bind race; that bound is lifted at
+`1d9505c`.** The address used to be handed out before the listener existed, so
+this claim was intermittently false in the first instant of a tunnel's life.
+Re-measured by this seat at the post-`0041` pass, with the host's own port churn
+excluded so the ordering is what is being measured: **28 dial refusals in 2000
+tunnel openings at `83fd9f7`, 0 in 2000 at `1d9505c`**
+([`STAGE.md`](STAGE.md) §2). The relay now binds the public port before the
+auth response leaves and refuses the handshake if it cannot.
+*Still bounded by:* **the deploy**, not the code. `pumasi.link` runs a
+pre-`83fd9f7` binary (`STAGE.md` §1), so nothing above is true of the running
+relay yet — that is `BACKLOG.md` item 1(i), blocked on **Q-014**. A tunnel
+opened against the live relay today still gets the old ordering.
 
 ### 4 · No interstitial page, and no session timer — **holds; read the TLS gap below**
 
 Nothing in the tree inserts an HTML warning page in front of a tunnel: a
 visitor's request is forwarded and the response comes back. Nothing imposes a
-session or bandwidth limit; the 10-hour tunnel above is the evidence, not the
+session or bandwidth limit; the 13-hour tunnel above is the evidence, not the
 absence of a feature.
 *What makes it a differentiator, cited:* LocalXpose's free Starter tier prints
 an "Interstitial warning page" and "Time limits"; Pinggy's free tier prints a
@@ -110,7 +119,7 @@ There is **no TLS**. What changed at `83fd9f7` is that the relay no longer
 startup, and is read by all three surfaces that show a person an address
 (`core/route.go:311`, `relay/dashboard.go:71`, `relay/sshingress.go:190`).
 **What did not change is the internet.** `pumasi.link` runs a pre-`83fd9f7`
-binary and, verified 16:21 UTC, still announces
+binary and, re-verified 20:06 UTC, still announces
 `"url":"https://sshsteward.pumasi.link"` while `curl https://pumasi.link/`
 fails to connect on a refused 443. Either way, every HTTP tunnel here is
 plaintext and any sender that requires an `https://` destination cannot be
