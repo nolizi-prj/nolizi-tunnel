@@ -78,7 +78,7 @@ type Relay struct {
 	pool *core.PortPool // nil when this relay serves HTTP only
 
 	mu           sync.RWMutex
-	sessions     map[string]*mux.Session // agent id -> session
+	sessions     map[string]tunnelSession // agent id -> live client connection
 	tcpListeners map[string][]*tcpListener
 }
 
@@ -104,7 +104,7 @@ func New(cfg Config) (*Relay, error) {
 		cfg:          cfg,
 		registry:     core.NewRegistry(cfg.BaseDomain),
 		log:          cfg.Logger,
-		sessions:     make(map[string]*mux.Session),
+		sessions:     make(map[string]tunnelSession),
 		tcpListeners: make(map[string][]*tcpListener),
 	}
 	if cfg.TCPPortLow != 0 || cfg.TCPPortHigh != 0 {
@@ -167,7 +167,7 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 		r.log.Warn("could not clear handshake deadline", "error", err)
 	}
 
-	session := mux.Server(conn)
+	session := muxSession{s: mux.Server(conn)}
 	r.mu.Lock()
 	r.sessions[resp.AgentID] = session
 	r.mu.Unlock()
@@ -321,11 +321,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// Every outbound "dial" is a new stream on the agent's existing
 			// connection — this is where the tunnel actually happens.
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				stream, err := session.Open(0)
-				if err != nil {
-					return nil, err
-				}
-				return stream.NetConn(), nil
+				return session.OpenStream(false)
 			},
 			// Streams are cheap and per-request; pooling them across requests
 			// would keep an agent's stream table populated for no gain.

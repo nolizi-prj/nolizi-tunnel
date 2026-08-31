@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -31,6 +32,8 @@ func main() {
 		tcpLow     = flag.Int("tcp-low", 0, "lowest public port for raw TCP tunnels (0 disables TCP)")
 		tcpHigh    = flag.Int("tcp-high", 0, "highest public port for raw TCP tunnels")
 		tcpBind    = flag.String("tcp-bind", "", "interface to bind public TCP ports on (empty = all)")
+		sshAddr    = flag.String("ssh-addr", "", "address for zero-install ssh tunnelling, e.g. :2222 (empty disables it)")
+		hostKey    = flag.String("ssh-hostkey", "/var/lib/pumasi-relay/ssh_host_ed25519_key", "path to the relay's ssh host key; generated if absent")
 		publicHost = flag.String("public-host", "", "hostname visitors dial for raw TCP (defaults to -domain)")
 		verbose    = flag.Bool("v", false, "log every routing decision")
 	)
@@ -77,6 +80,44 @@ func main() {
 			go r.ServeAgent(conn)
 		}
 	}()
+
+	// Zero-install path: a stock ssh client can open a tunnel with no binary
+	// downloaded and no account, which the incumbent study found to be the
+	// highest-leverage onboarding behaviour in this category.
+	if *sshAddr != "" {
+		signer, err := relay.LoadOrCreateHostKey(*hostKey, relay.GenerateHostKeyPEM, os.ReadFile, func(path string, pem []byte) error {
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				return err
+			}
+			// 0600: a leaked host key lets anyone impersonate this relay to
+			// every client that has it in known_hosts.
+			return os.WriteFile(path, pem, 0o600)
+		})
+		if err != nil {
+			log.Error("ssh ingress disabled", "error", err)
+			os.Exit(1)
+		}
+		sshLn, err := net.Listen("tcp", *sshAddr)
+		if err != nil {
+			log.Error("could not listen for ssh", "addr", *sshAddr, "error", err)
+			os.Exit(1)
+		}
+		defer sshLn.Close()
+		go func() {
+			log.Info("ssh ingress listening", "addr", *sshAddr)
+			for {
+				conn, err := sshLn.Accept()
+				if err != nil {
+					if errors.Is(err, net.ErrClosed) {
+						return
+					}
+					log.Warn("ssh accept failed", "error", err)
+					continue
+				}
+				go r.ServeSSH(conn, signer)
+			}
+		}()
+	}
 
 	srv := &http.Server{
 		Addr:              *httpAddr,

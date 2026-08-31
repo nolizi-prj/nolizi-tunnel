@@ -6,9 +6,6 @@ import (
 	"io"
 	"net"
 	"sync"
-
-	"github.com/pumasi-ai/pumasi-tunnel/core"
-	"github.com/pumasi-ai/pumasi-tunnel/mux"
 )
 
 // Raw TCP tunnels are what carry SSH, RDP, and database clients — the traffic
@@ -56,7 +53,7 @@ func (r *Relay) allocateTCPPort(agentID string, requested int) (int, error) {
 
 // bindTCP binds an already-allocated port and serves it until the agent's
 // session ends.
-func (r *Relay) bindTCP(session *mux.Session, agentID, subdomain string, port int) error {
+func (r *Relay) bindTCP(session tunnelSession, agentID, subdomain string, port int) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", r.cfg.TCPBindHost, port))
 	if err != nil {
 		// Hand the port back rather than leaking it: a port the pool believes
@@ -76,7 +73,7 @@ func (r *Relay) bindTCP(session *mux.Session, agentID, subdomain string, port in
 }
 
 // serveTCP accepts visitors on a public port and gives each one a stream.
-func (r *Relay) serveTCP(session *mux.Session, listener *tcpListener, subdomain string) {
+func (r *Relay) serveTCP(session tunnelSession, listener *tcpListener, subdomain string) {
 	defer listener.stop()
 
 	// A dead session must free the port immediately; otherwise the listener
@@ -95,7 +92,7 @@ func (r *Relay) serveTCP(session *mux.Session, listener *tcpListener, subdomain 
 			return
 		}
 
-		stream, err := session.Open(core.FlagTCP)
+		stream, err := session.OpenStream(true)
 		if err != nil {
 			// The agent is gone; refuse this visitor rather than hold it open.
 			conn.Close()
@@ -104,7 +101,7 @@ func (r *Relay) serveTCP(session *mux.Session, listener *tcpListener, subdomain 
 			return
 		}
 
-		r.log.Debug("tcp connection", "port", listener.port, "from", conn.RemoteAddr(), "stream", stream.ID())
+		r.log.Debug("tcp connection", "port", listener.port, "from", conn.RemoteAddr())
 		go pipe(conn, stream)
 	}
 }
@@ -112,7 +109,7 @@ func (r *Relay) serveTCP(session *mux.Session, listener *tcpListener, subdomain 
 // pipe copies bytes both ways between a visitor's connection and a stream,
 // and does not return until both directions are finished. Nothing is parsed:
 // SSH, RDP and Postgres all pass through as the opaque byte streams they are.
-func pipe(conn net.Conn, stream *mux.Stream) {
+func pipe(conn net.Conn, stream net.Conn) {
 	defer conn.Close()
 	defer stream.Close()
 
@@ -123,8 +120,12 @@ func pipe(conn net.Conn, stream *mux.Stream) {
 		defer wg.Done()
 		io.Copy(stream, conn)
 		// Tell the far side this direction is done, so a protocol that waits
-		// for end-of-input can proceed instead of stalling.
-		stream.CloseWrite()
+		// for end-of-input can proceed instead of stalling. Not every stream
+		// kind supports half-close; an SSH channel does, a bare net.Conn may
+		// not, so this is asked for rather than assumed.
+		if cw, ok := stream.(interface{ CloseWrite() error }); ok {
+			cw.CloseWrite()
+		}
 	}()
 
 	go func() {
