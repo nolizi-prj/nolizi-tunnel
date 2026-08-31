@@ -1,0 +1,9 @@
+Pumasi Web
+Copyright the Pumasi contributors.
+
+Licensed under the Apache License, Version 2.0.
+
+This is the source of the Pumasi website: a static site generator and the
+content it renders. It holds no personal data, sets no cookies, ships no
+client-side JavaScript, and calls no third-party service at build or at
+serve time.
