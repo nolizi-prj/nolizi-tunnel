@@ -1,9 +1,14 @@
-Pumasi Web
+Pumasi Tunnel
 Copyright the Pumasi contributors.
 
 Licensed under the Apache License, Version 2.0.
 
-This is the source of the Pumasi website: a static site generator and the
-content it renders. It holds no personal data, sets no cookies, ships no
-client-side JavaScript, and calls no third-party service at build or at
-serve time.
+This is the source of Pumasi Tunnel: a relay that publishes a port on a
+developer's machine at a public address, and the client that connects to it.
+
+Traffic through a tunnel is the operator's and the developer's, not this
+project's: the relay forwards bytes and does not store request or response
+bodies. A running relay necessarily observes connection metadata — the
+subdomain or public port addressed, byte counts, and peer addresses — and an
+operator who enables the request inspector holds captured requests locally on
+the developer's own machine, on port 4040, not on the relay.

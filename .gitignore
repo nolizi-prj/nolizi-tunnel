@@ -3,3 +3,8 @@ dist/
 *.exe
 *.log
 .env
+# Go build output
+/pumasi-tunnel
+/pumasi-relay
+*.test
+coverage.out
