@@ -32,6 +32,9 @@ type Config struct {
 	Subdomain string
 	// Token authenticates a reserved subdomain.
 	Token string
+	// TCP asks the relay for a public TCP port instead of an HTTP hostname,
+	// which is what SSH, RDP and database clients need.
+	TCP bool
 	// Dial opens the control connection; net.Dial when nil. Tests and a
 	// future TLS transport substitute here.
 	Dial func(ctx context.Context, addr string) (net.Conn, error)
@@ -131,7 +134,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	req := core.AuthRequest{
 		Token:     a.cfg.Token,
 		Subdomain: a.cfg.Subdomain,
-		TCP:       false,
+		TCP:       a.cfg.TCP,
 	}
 	if _, portStr, splitErr := net.SplitHostPort(a.cfg.LocalAddr); splitErr == nil {
 		fmt.Sscanf(portStr, "%d", &req.LocalPort)

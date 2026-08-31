@@ -28,6 +28,10 @@ func main() {
 		baseDomain = flag.String("domain", "pumasi.link", "base domain tunnels are published under")
 		agentAddr  = flag.String("agent-addr", ":7000", "address to accept agent connections on")
 		httpAddr   = flag.String("http-addr", ":8000", "address to accept visitor HTTP on")
+		tcpLow     = flag.Int("tcp-low", 0, "lowest public port for raw TCP tunnels (0 disables TCP)")
+		tcpHigh    = flag.Int("tcp-high", 0, "highest public port for raw TCP tunnels")
+		tcpBind    = flag.String("tcp-bind", "", "interface to bind public TCP ports on (empty = all)")
+		publicHost = flag.String("public-host", "", "hostname visitors dial for raw TCP (defaults to -domain)")
 		verbose    = flag.Bool("v", false, "log every routing decision")
 	)
 	flag.Parse()
@@ -38,7 +42,14 @@ func main() {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
-	r, err := relay.New(relay.Config{BaseDomain: *baseDomain, Logger: log})
+	r, err := relay.New(relay.Config{
+		BaseDomain:  *baseDomain,
+		Logger:      log,
+		TCPPortLow:  *tcpLow,
+		TCPPortHigh: *tcpHigh,
+		TCPBindHost: *tcpBind,
+		PublicHost:  *publicHost,
+	})
 	if err != nil {
 		log.Error("could not start", "error", err)
 		os.Exit(1)

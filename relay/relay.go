@@ -51,6 +51,18 @@ type Config struct {
 	// authenticate, so an idle or hostile dialler cannot hold a slot open
 	// forever. Defaults to 10s.
 	HandshakeTimeout time.Duration
+
+	// TCPPortLow and TCPPortHigh bound the public ports handed to raw TCP
+	// tunnels (SSH, RDP, databases). Leave both zero to refuse TCP tunnels
+	// and serve HTTP only.
+	TCPPortLow, TCPPortHigh int
+	// TCPBindHost is the interface public TCP ports bind on. Empty means all
+	// interfaces, which is what a relay on a public host wants; tests set
+	// 127.0.0.1.
+	TCPBindHost string
+	// PublicHost is the address a visitor dials for raw TCP, reported to the
+	// agent so the CLI can print it. Defaults to BaseDomain.
+	PublicHost string
 }
 
 // Relay accepts agents and serves visitor traffic for them.
@@ -59,8 +71,11 @@ type Relay struct {
 	registry *core.Registry
 	log      *slog.Logger
 
-	mu       sync.RWMutex
-	sessions map[string]*mux.Session // agent id -> session
+	pool *core.PortPool // nil when this relay serves HTTP only
+
+	mu           sync.RWMutex
+	sessions     map[string]*mux.Session // agent id -> session
+	tcpListeners map[string][]*tcpListener
 }
 
 // New builds a relay.
@@ -77,12 +92,25 @@ func New(cfg Config) (*Relay, error) {
 	if cfg.HandshakeTimeout == 0 {
 		cfg.HandshakeTimeout = 10 * time.Second
 	}
-	return &Relay{
-		cfg:      cfg,
-		registry: core.NewRegistry(cfg.BaseDomain),
-		log:      cfg.Logger,
-		sessions: make(map[string]*mux.Session),
-	}, nil
+	if cfg.PublicHost == "" {
+		cfg.PublicHost = cfg.BaseDomain
+	}
+
+	r := &Relay{
+		cfg:          cfg,
+		registry:     core.NewRegistry(cfg.BaseDomain),
+		log:          cfg.Logger,
+		sessions:     make(map[string]*mux.Session),
+		tcpListeners: make(map[string][]*tcpListener),
+	}
+	if cfg.TCPPortLow != 0 || cfg.TCPPortHigh != 0 {
+		pool, err := core.NewPortPool(cfg.TCPPortLow, cfg.TCPPortHigh)
+		if err != nil {
+			return nil, err
+		}
+		r.pool = pool
+	}
+	return r, nil
 }
 
 // Registry exposes the routing table, for a status endpoint or a dashboard.
@@ -140,9 +168,26 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 	r.sessions[resp.AgentID] = session
 	r.mu.Unlock()
 
+	// The port was reserved during the handshake; bind it now that there is a
+	// session to forward into.
+	if resp.TCPAddr != "" {
+		tunnel, lookupErr := r.registry.Lookup(resp.Subdomain + "." + r.cfg.BaseDomain)
+		if lookupErr != nil {
+			r.log.Error("tcp tunnel vanished before binding", "error", lookupErr)
+		} else if err := r.bindTCP(session, resp.AgentID, resp.Subdomain, tunnel.TCPPort); err != nil {
+			// The agent believes it has a public port, so tell it plainly
+			// rather than leaving it to wonder why nothing arrives.
+			r.log.Error("could not bind the public tcp port", "error", err)
+			r.writeFrame(conn, core.ErrorFrame(err.Error()))
+			r.registry.UnregisterAgent(resp.AgentID)
+			session.Close()
+			return
+		}
+	}
+
 	r.log.Info("tunnel open",
 		"agent", resp.AgentID, "subdomain", resp.Subdomain, "url", resp.URL,
-		"local_port", req.LocalPort, "peer", conn.RemoteAddr())
+		"tcp", resp.TCPAddr, "local_port", req.LocalPort, "peer", conn.RemoteAddr())
 
 	// Everything this agent owns is released when its connection ends —
 	// whether it closed cleanly or the laptop lid shut.
@@ -150,9 +195,10 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 		r.mu.Lock()
 		delete(r.sessions, resp.AgentID)
 		r.mu.Unlock()
+		freedPorts := r.releaseTCP(resp.AgentID)
 		freed := r.registry.UnregisterAgent(resp.AgentID)
 		session.Close()
-		r.log.Info("tunnel closed", "agent", resp.AgentID, "released", freed)
+		r.log.Info("tunnel closed", "agent", resp.AgentID, "released", freed, "ports", freedPorts)
 	}()
 
 	<-session.CloseChan()
@@ -185,15 +231,31 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, error) {
 		LocalPort: req.LocalPort,
 		Reserved:  req.Subdomain != "" && req.Token != "",
 	}
-	if err := r.registry.Register(tunnel); err != nil {
-		return core.AuthResponse{}, err
-	}
 
-	return core.AuthResponse{
+	resp := core.AuthResponse{
 		Subdomain: name,
 		URL:       r.registry.PublicURL(name),
 		AgentID:   agentID,
-	}, nil
+	}
+
+	// A raw TCP tunnel needs its public port decided here, because the port
+	// number is the address and it has to travel back in this response.
+	if req.TCP {
+		port, err := r.allocateTCP(agentID)
+		if err != nil {
+			return core.AuthResponse{}, err
+		}
+		tunnel.TCPPort = port
+		resp.TCPAddr = fmt.Sprintf("%s:%d", r.cfg.PublicHost, port)
+	}
+
+	if err := r.registry.Register(tunnel); err != nil {
+		if tunnel.TCPPort != 0 {
+			r.pool.Release(tunnel.TCPPort)
+		}
+		return core.AuthResponse{}, err
+	}
+	return resp, nil
 }
 
 func (r *Relay) writeFrame(w io.Writer, f core.Frame) error {

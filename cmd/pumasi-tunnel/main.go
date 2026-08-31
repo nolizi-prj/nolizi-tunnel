@@ -27,6 +27,7 @@ func main() {
 		subdomain = flag.String("subdomain", "", "request a specific name; omit to be assigned one")
 		token     = flag.String("token", "", "token for a reserved subdomain")
 		host      = flag.String("host", "127.0.0.1", "local host to forward to")
+		tcp       = flag.Bool("tcp", false, "raw TCP tunnel (SSH, RDP, databases) instead of HTTP")
 		verbose   = flag.Bool("v", false, "log each forwarded stream")
 	)
 	flag.Usage = func() {
@@ -71,12 +72,17 @@ func main() {
 		LocalAddr: local,
 		Subdomain: requested,
 		Token:     *token,
+		TCP:       *tcp,
 		Logger:    log,
 		OnConnect: func(resp core.AuthResponse) {
 			// Printed on every connect, reconnects included, because after a
 			// network flap the first thing a person wants to know is whether
-			// the URL still holds.
-			fmt.Printf("\n  %s  ->  %s\n\n", resp.URL, local)
+			// the address still holds.
+			addr := resp.URL
+			if resp.TCPAddr != "" {
+				addr = resp.TCPAddr
+			}
+			fmt.Printf("\n  %s  ->  %s\n\n", addr, local)
 		},
 	})
 	if err != nil {
