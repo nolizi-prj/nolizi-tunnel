@@ -28,6 +28,7 @@ func main() {
 		token     = flag.String("token", "", "token for a reserved subdomain")
 		host      = flag.String("host", "127.0.0.1", "local host to forward to")
 		tcp       = flag.Bool("tcp", false, "raw TCP tunnel (SSH, RDP, databases) instead of HTTP")
+		tcpPort   = flag.Int("tcp-port", 0, "request this exact public port, so the address survives reconnects")
 		verbose   = flag.Bool("v", false, "log each forwarded stream")
 	)
 	flag.Usage = func() {
@@ -73,6 +74,7 @@ func main() {
 		Subdomain: requested,
 		Token:     *token,
 		TCP:       *tcp,
+		TCPPort:   *tcpPort,
 		Logger:    log,
 		OnConnect: func(resp core.AuthResponse) {
 			// Printed on every connect, reconnects included, because after a

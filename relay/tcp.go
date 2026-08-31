@@ -32,12 +32,24 @@ func (t *tcpListener) stop() {
 	t.stopOnce.Do(func() { t.ln.Close() })
 }
 
-// allocateTCP reserves a public port for an agent. It runs during the
+// allocateTCPPort reserves a public port for an agent. It runs during the
 // handshake, before any session exists, because the port number has to travel
 // back in the auth response — the agent cannot be told its address afterwards.
-func (r *Relay) allocateTCP(agentID string) (int, error) {
+//
+// A requested port is honoured when free, so a reconnecting agent keeps the
+// address its users already know. Refusing rather than silently substituting
+// matters here: an agent asked for a specific port because something is
+// configured to dial it, and quietly handing back a different one would look
+// like success while nothing could reach it.
+func (r *Relay) allocateTCPPort(agentID string, requested int) (int, error) {
 	if r.pool == nil {
 		return 0, errors.New("relay: this relay has no TCP port range configured")
+	}
+	if requested != 0 {
+		if err := r.pool.AllocateSpecific(requested, agentID); err != nil {
+			return 0, err
+		}
+		return requested, nil
 	}
 	return r.pool.Allocate(agentID)
 }

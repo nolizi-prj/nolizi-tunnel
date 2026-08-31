@@ -35,6 +35,9 @@ type Config struct {
 	// TCP asks the relay for a public TCP port instead of an HTTP hostname,
 	// which is what SSH, RDP and database clients need.
 	TCP bool
+	// TCPPort requests one specific public port so the address survives
+	// reconnects; zero lets the relay choose.
+	TCPPort int
 	// Dial opens the control connection; net.Dial when nil. Tests and a
 	// future TLS transport substitute here.
 	Dial func(ctx context.Context, addr string) (net.Conn, error)
@@ -135,6 +138,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		Token:     a.cfg.Token,
 		Subdomain: a.cfg.Subdomain,
 		TCP:       a.cfg.TCP,
+		TCPPort:   a.cfg.TCPPort,
 	}
 	if _, portStr, splitErr := net.SplitHostPort(a.cfg.LocalAddr); splitErr == nil {
 		fmt.Sscanf(portStr, "%d", &req.LocalPort)

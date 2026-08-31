@@ -24,6 +24,11 @@ type AuthRequest struct {
 	LocalPort int `json:"local_port,omitempty"`
 	// TCP asks for a public TCP port instead of an HTTP hostname.
 	TCP bool `json:"tcp,omitempty"`
+	// TCPPort requests one specific public port. Zero lets the relay choose.
+	// A fixed port is what makes an address worth writing down: a client that
+	// reconnects after a network drop must still be reachable at the address
+	// its users already have.
+	TCPPort int `json:"tcp_port,omitempty"`
 	// ClientVersion is reported in the relay's logs and status surface.
 	ClientVersion string `json:"client_version,omitempty"`
 }

@@ -241,7 +241,7 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, error) {
 	// A raw TCP tunnel needs its public port decided here, because the port
 	// number is the address and it has to travel back in this response.
 	if req.TCP {
-		port, err := r.allocateTCP(agentID)
+		port, err := r.allocateTCPPort(agentID, req.TCPPort)
 		if err != nil {
 			return core.AuthResponse{}, err
 		}
