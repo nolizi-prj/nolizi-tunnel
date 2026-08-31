@@ -3,8 +3,10 @@ package core
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Routing errors.
@@ -57,6 +59,18 @@ func SplitHost(host, baseDomain string) (string, error) {
 	return label, nil
 }
 
+// IsApexHost reports whether a Host header addresses the base domain itself
+// rather than a tunnel beneath it. The relay serves its own console there.
+func IsApexHost(host, baseDomain string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if i := strings.LastIndex(h, ":"); i != -1 && !strings.Contains(h[i:], "]") {
+		h = h[:i]
+	}
+	h = strings.TrimSuffix(h, ".")
+	base := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(baseDomain)), ".")
+	return h != "" && h == base
+}
+
 // Tunnel is one registered forwarding target. It is a value describing what
 // the relay should do with matching traffic; it holds no connection itself,
 // which is what keeps this package free of I/O.
@@ -74,6 +88,13 @@ type Tunnel struct {
 	// Reserved marks a tunnel whose subdomain belongs to an account and
 	// survives disconnects, as opposed to an ephemeral one.
 	Reserved bool
+	// Requested marks an address the agent asked for by name or port rather
+	// than accepted from the relay — the one that will still be there after a
+	// reconnect, and so the one worth writing down.
+	Requested bool
+	// OpenedAt is when the tunnel registered. The registry stamps it, so a
+	// caller cannot report a tunnel as older than it is.
+	OpenedAt time.Time
 }
 
 // Registry maps hostnames and public TCP ports to tunnels. It is safe for
@@ -115,6 +136,7 @@ func (r *Registry) Register(t Tunnel) error {
 		return err
 	}
 	name := t.Subdomain
+	t.OpenedAt = time.Now().UTC()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -198,6 +220,20 @@ func (r *Registry) UnregisterAgent(agentID string) []string {
 		}
 	}
 	return freed
+}
+
+// List returns every registered tunnel, sorted by subdomain so a dashboard
+// renders in a stable order rather than map-iteration order.
+func (r *Registry) List() []Tunnel {
+	r.mu.RLock()
+	out := make([]Tunnel, 0, len(r.byName))
+	for _, t := range r.byName {
+		out = append(out, t)
+	}
+	r.mu.RUnlock()
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Subdomain < out[j].Subdomain })
+	return out
 }
 
 // Len reports how many tunnels are registered.

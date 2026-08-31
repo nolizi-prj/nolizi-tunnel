@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pumasi Tunnel</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --border: #e3e1dc;
+    --ink: #21201c;
+    --muted: #6b6862;
+    --accent: #1f6f5c;
+    --accent-ink: #ffffff;
+    --code-bg: #f4f3f0;
+    --live: #2f8f5b;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1917;
+      --surface: #232220;
+      --border: #35332f;
+      --ink: #eceae5;
+      --muted: #a09c94;
+      --accent: #4bb794;
+      --accent-ink: #14211d;
+      --code-bg: #171614;
+      --live: #58c78a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 32px 20px 64px; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .tagline { color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+  .badge {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    background: color-mix(in srgb, var(--live) 16%, transparent);
+    color: var(--live); border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
+  }
+
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+  h2 { font-size: 14px; margin: 0 0 4px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+
+  /* Command builder — the page's centre of gravity: a form whose only
+     output is the one line to paste. */
+  .fields { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input[type=text], input[type=number], select {
+    font: inherit; padding: 7px 10px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--ink); min-width: 130px;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  .radios { display: flex; gap: 6px; }
+  .radios label {
+    font-size: 13px; padding: 7px 12px; border: 1px solid var(--border);
+    border-radius: 7px; cursor: pointer; background: var(--bg); color: var(--ink);
+  }
+  .radios input { position: absolute; opacity: 0; pointer-events: none; }
+  .radios input:checked + span { font-weight: 600; }
+  .radios label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+  .command { display: flex; align-items: stretch; gap: 8px; }
+  .command pre {
+    flex: 1; margin: 0; padding: 13px 15px; background: var(--code-bg);
+    border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; font-size: 13.5px;
+  }
+  button {
+    font: inherit; cursor: pointer; border-radius: 7px; padding: 8px 15px;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--border); }
+  button:active { transform: translateY(1px); }
+  .result { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+  .result strong { color: var(--ink); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--muted); font-weight: 500; padding: 0 10px 8px 0; }
+  td { padding: 11px 10px 11px 0; border-top: 1px solid var(--border); vertical-align: top; }
+  td a { color: var(--accent); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 12.5px; }
+  .pill { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+
+  /* Empty states guide rather than merely report — the pattern the study
+     found on every list in all three incumbents. */
+  .empty { text-align: center; padding: 26px 10px; color: var(--muted); }
+  .empty p { margin: 0 0 4px; }
+
+  .facts { display: flex; flex-wrap: wrap; gap: 22px; font-size: 13px; color: var(--muted); }
+  .facts b { display: block; color: var(--ink); font-weight: 600; font-size: 14px; }
+  footer { color: var(--muted); font-size: 12.5px; text-align: center; margin-top: 30px; }
+  footer a { color: var(--muted); }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Pumasi Tunnel</h1>
+    <span class="badge" id="live-badge">relay live</span>
+  </header>
+  <p class="tagline">
+    Publish a port on your machine at a public address, over one outbound
+    connection — no port forwarding, no inbound firewall rule.
+  </p>
+
+  <section>
+    <h2>Open a tunnel</h2>
+    <p class="hint">Fill this in, then paste the command on the machine you want to reach.</p>
+
+    <div class="fields">
+      <div class="field">
+        <label for="port">Local port</label>
+        <input type="number" id="port" value="8080" min="1" max="65535">
+      </div>
+      <div class="field">
+        <label>Kind</label>
+        <div class="radios">
+          <label><input type="radio" name="kind" value="http" checked><span>HTTP</span></label>
+          <label><input type="radio" name="kind" value="tcp"><span>Raw TCP</span></label>
+        </div>
+      </div>
+      <div class="field" id="name-field">
+        <label for="name">Name <span class="sub">(optional)</span></label>
+        <input type="text" id="name" placeholder="assigned if blank" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field" id="tcpport-field" hidden>
+        <label for="tcpport">Public port <span class="sub">(optional)</span></label>
+        <input type="number" id="tcpport" placeholder="assigned if blank" min="1" max="65535">
+      </div>
+    </div>
+
+    <div class="command">
+      <pre id="cmd"></pre>
+      <button id="copy" type="button">Copy</button>
+    </div>
+    <p class="result" id="result"></p>
+  </section>
+
+  <section>
+    <h2>Open tunnels <span class="sub" id="count"></span></h2>
+    <div id="table-area" class="scroll"></div>
+  </section>
+
+  <section>
+    <h2>First time here</h2>
+    <p class="hint">The client is a single static binary with no dependencies.</p>
+    <div class="command">
+      <pre id="install">git clone https://github.com/pumasi-ai/pumasi-tunnel &amp;&amp; cd pumasi-tunnel
+go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
+      <button class="ghost" id="copy-install" type="button">Copy</button>
+    </div>
+    <p class="result">
+      Apache-2.0, and the relay is the same repository — you are free to run your own
+      rather than use this one.
+    </p>
+  </section>
+
+  <section>
+    <h2>This relay</h2>
+    <div class="facts">
+      <div><b id="f-domain">—</b> base domain</div>
+      <div><b id="f-agent">—</b> agent port</div>
+      <div><b id="f-tcp">—</b> public TCP range</div>
+      <div><b id="f-count">—</b> tunnels open</div>
+    </div>
+  </section>
+
+  <footer>
+    Part of <a href="https://github.com/pumasi-ai/pumasi">Pumasi</a>, a commons of
+    software built by agents and governed by people.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var state = { base: location.hostname, agentPort: "7000" };
+
+  var portEl = document.getElementById("port");
+  var nameEl = document.getElementById("name");
+  var tcpPortEl = document.getElementById("tcpport");
+  var cmdEl = document.getElementById("cmd");
+  var resultEl = document.getElementById("result");
+
+  function kind() {
+    var checked = document.querySelector('input[name=kind]:checked');
+    return checked ? checked.value : "http";
+  }
+
+  // Names are lowercased here rather than by the relay: a person who types
+  // "MyApi" should see what will actually be requested, not discover the
+  // difference afterwards.
+  function cleanName(raw) {
+    return (raw || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+  }
+
+  function build() {
+    var tcp = kind() === "tcp";
+    document.getElementById("name-field").hidden = tcp;
+    document.getElementById("tcpport-field").hidden = !tcp;
+
+    var port = parseInt(portEl.value, 10);
+    if (!port || port < 1 || port > 65535) port = 8080;
+
+    var parts = ["pumasi-tunnel", "--relay " + state.base + ":" + state.agentPort];
+    var name = cleanName(nameEl.value);
+
+    if (tcp) {
+      parts.push("--tcp");
+      var pub = parseInt(tcpPortEl.value, 10);
+      if (pub >= 1 && pub <= 65535) parts.push("--tcp-port " + pub);
+    } else if (name) {
+      parts.push("--subdomain " + name);
+    }
+    parts.push(String(port));
+    cmdEl.textContent = parts.join(" ");
+
+    if (tcp) {
+      resultEl.innerHTML = "Gives you a public <strong>host:port</strong> that any plain " +
+        "TCP client can dial — ssh, RDP, a database tool — with nothing installed on " +
+        "the far end.";
+    } else if (name) {
+      resultEl.innerHTML = "Publishes at <strong>" + name + "." + state.base + "</strong>.";
+    } else {
+      resultEl.innerHTML = "Publishes at a name the relay assigns, printed when it connects.";
+    }
+  }
+
+  function copyFrom(el, button) {
+    var text = el.textContent;
+    var done = function () {
+      var was = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(function () { button.textContent = was; }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+    // Clipboard access is refused outside a secure context, and this relay
+    // serves plain HTTP until certificates land — so a manual path has to
+    // exist rather than the button silently doing nothing.
+    function fallback() {
+      var sel = window.getSelection();
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try { document.execCommand("copy"); done(); }
+      catch (e) { button.textContent = "Select & copy"; }
+    }
+  }
+
+  function ago(secs) {
+    if (secs < 60) return secs + "s";
+    if (secs < 3600) return Math.floor(secs / 60) + "m";
+    if (secs < 86400) return Math.floor(secs / 3600) + "h";
+    return Math.floor(secs / 86400) + "d";
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function renderTable(data) {
+    var area = document.getElementById("table-area");
+    var tunnels = data.tunnels || [];
+
+    if (!tunnels.length) {
+      area.innerHTML =
+        '<div class="empty"><p>No tunnels are open.</p>' +
+        '<p class="sub">Run the command above on the machine you want to reach — ' +
+        'a tunnel appears here the moment it connects.</p></div>';
+      return;
+    }
+
+    var rows = tunnels.map(function (t) {
+      var address = t.tcp_addr
+        ? '<span class="mono">' + escapeHTML(t.tcp_addr) + "</span>" +
+          '<div class="sub">raw TCP</div>'
+        : '<a href="' + escapeHTML(t.url) + '" rel="noopener">' +
+          escapeHTML(t.subdomain + "." + data.base_domain) + "</a>" +
+          '<div class="sub">HTTP</div>';
+      return "<tr><td>" + address + "</td>" +
+        '<td class="mono">' + (t.local_port ? ":" + t.local_port : "—") + "</td>" +
+        "<td>" + ago(t.age_secs) + '<div class="sub">' + escapeHTML((t.opened_at || "").replace("T", " ").replace("Z", " UTC")) + "</div></td>" +
+        "<td>" + '<span class="pill">' + (t.fixed ? "fixed address" : "assigned") + "</span></td></tr>";
+    }).join("");
+
+    area.innerHTML =
+      "<table><thead><tr><th>Public address</th><th>Local</th><th>Open for</th><th></th></tr></thead>" +
+      "<tbody>" + rows + "</tbody></table>";
+  }
+
+  function poll() {
+    fetch("/_pumasi/status", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        state.base = data.base_domain || state.base;
+        state.agentPort = (data.agent_port || "7000").replace(/^:/, "");
+        document.getElementById("f-domain").textContent = data.base_domain || "—";
+        document.getElementById("f-agent").textContent = state.agentPort;
+        document.getElementById("f-tcp").textContent = data.tcp_range || "disabled";
+        document.getElementById("f-count").textContent = data.count;
+        document.getElementById("count").textContent = data.count ? "(" + data.count + ")" : "";
+        document.getElementById("live-badge").textContent = "relay live";
+        document.getElementById("live-badge").style.opacity = "1";
+        renderTable(data);
+        build();
+      })
+      .catch(function () {
+        // Say so rather than leaving a stale table looking current.
+        var b = document.getElementById("live-badge");
+        b.textContent = "relay unreachable";
+        b.style.opacity = "0.6";
+      });
+  }
+
+  ["input", "change"].forEach(function (evt) {
+    document.addEventListener(evt, function (e) {
+      if (e.target.closest("section")) build();
+    });
+  });
+  document.getElementById("copy").addEventListener("click", function () {
+    copyFrom(cmdEl, this);
+  });
+  document.getElementById("copy-install").addEventListener("click", function () {
+    copyFrom(document.getElementById("install"), this);
+  });
+
+  build();
+  poll();
+  setInterval(poll, 5000);
+})();
+</script>
+</body>
+</html>

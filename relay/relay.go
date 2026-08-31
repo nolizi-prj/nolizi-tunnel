@@ -63,6 +63,10 @@ type Config struct {
 	// PublicHost is the address a visitor dials for raw TCP, reported to the
 	// agent so the CLI can print it. Defaults to BaseDomain.
 	PublicHost string
+	// AgentPublicPort is the port agents dial, shown by the console's command
+	// builder so a person can copy a command that actually works. Display
+	// only — the listener's address is the caller's business.
+	AgentPublicPort string
 }
 
 // Relay accepts agents and serves visitor traffic for them.
@@ -230,6 +234,7 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, error) {
 		AgentID:   agentID,
 		LocalPort: req.LocalPort,
 		Reserved:  req.Subdomain != "" && req.Token != "",
+		Requested: req.Subdomain != "" || req.TCPPort != 0,
 	}
 
 	resp := core.AuthResponse{
@@ -271,6 +276,20 @@ func (r *Relay) writeFrame(w io.Writer, f core.Frame) error {
 // It satisfies http.Handler, so the edge listener is an ordinary net/http
 // server and TLS is whatever the operator wraps around it.
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// The apex is the relay's own console, never a tunnel — SplitHost already
+	// refuses to route it, so serving it here costs a tunnel nothing.
+	if core.IsApexHost(req.Host, r.cfg.BaseDomain) {
+		switch req.URL.Path {
+		case "/_pumasi/status":
+			r.serveStatus(w, req)
+		case "/":
+			r.serveDashboard(w, req)
+		default:
+			http.NotFound(w, req)
+		}
+		return
+	}
+
 	tunnel, err := r.registry.Lookup(req.Host)
 	if err != nil {
 		r.notFound(w, req, err)

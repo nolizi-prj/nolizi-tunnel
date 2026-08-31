@@ -43,12 +43,13 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	r, err := relay.New(relay.Config{
-		BaseDomain:  *baseDomain,
-		Logger:      log,
-		TCPPortLow:  *tcpLow,
-		TCPPortHigh: *tcpHigh,
-		TCPBindHost: *tcpBind,
-		PublicHost:  *publicHost,
+		BaseDomain:      *baseDomain,
+		Logger:          log,
+		TCPPortLow:      *tcpLow,
+		TCPPortHigh:     *tcpHigh,
+		TCPBindHost:     *tcpBind,
+		PublicHost:      *publicHost,
+		AgentPublicPort: *agentAddr,
 	})
 	if err != nil {
 		log.Error("could not start", "error", err)
