@@ -303,6 +303,9 @@ written under is a backlog entry that named its own fix, was ranked on the
 strength of it, and was wrong in a way five hundred clean suite runs could not
 catch (`roadmap/BACKLOG.md`, *Delivered*).
 
+**Answered 2026-09-01, before slice 2's code — see §14.** All three questions
+are decided there and the rest of slice 2 is specified against the answers.
+
 ## 8 · Failure modes this spec does not cover, chosen rather than missed
 
 - **A stranger can claim a name before its rightful user does.** Trust on first
@@ -594,3 +597,286 @@ often.
 - §5.1's `Check` refusing short tokens is dead-path symmetry, since §5.3 never
   calls `Check` with a token. Kept deliberately: a primitive that is safe only
   because of its caller is one refactor from being unsafe.
+
+## 14 · Amended 2026-09-01, before slice 2's code — the three open questions, answered
+
+§7 closes by naming three questions and saying each *"deserves a reviewer's
+objection **before** code"*: **fsync policy**, **what a corrupt file does at
+boot**, and **whether two relays may share a path**. This section answers all
+three and specifies the rest of slice 2 against those answers. It is written
+before any of slice 2's implementation exists, which is the whole of why it is
+a separate section rather than an edit to §7 — the record shows what was
+decided and when, not a spec that looks like it always knew.
+
+**No existing row of [`acceptance/CASES.md`](acceptance/CASES.md) is touched by
+this amendment, including D-1**, which stands exactly as frozen. §14.9 adds new
+rows in a new section, by the same route §13 added C-8 and C-9.
+
+### 14.1 · Question 1 — fsync, and what the rename actually buys
+
+**The rename buys atomicity. It does not buy durability, and this spec stops
+saying "crash" as though the two crashes were one crash.**
+
+Two different events are in scope and they have different answers:
+
+| event | what rename alone gives | what fsync adds |
+|---|---|---|
+| **the relay process dies mid-write** (panic, SIGKILL, deploy) | **complete protection.** The kernel's page cache is unaffected by a process dying; the next `open` reads the previous document or the whole new one and never half of one. | nothing |
+| **the host loses power or the kernel panics** | **nothing guaranteed.** The temp file's data and the directory entry are both potentially still in cache. `ext4`'s `auto_da_alloc` heuristic covers the common truncate-then-rename shape and is a heuristic, not a contract, and other filesystems do not have it. | the guarantee |
+
+**Decision: fsync both, and the order is part of the specification.**
+
+1. write the whole document to `<path>.tmp` in the **same directory** as
+   `<path>` — never `os.TempDir()`, because `rename(2)` across filesystems
+   fails and is not atomic where it does not;
+2. `f.Sync()` on the temp file, **before** the rename, so the rename cannot
+   become durable ahead of the bytes it points at;
+3. `os.Rename(tmp, path)`;
+4. **open the containing directory and `Sync()` it**, so the directory entry
+   the rename created is itself durable.
+
+Mode `0600` on the temp file. The document holds token digests; a digest is not
+a live credential (§3.1) and is still the input to an offline attack, and
+`0600` costs one constant.
+
+**Why fsync is worth its cost here, stated as a cost rather than assumed away.**
+Two `fsync`s happen on the path that creates or refreshes a claim — once per
+handshake that presents a token, and never on the anonymous path. That is a
+human-rate event on a relay whose whole live set is two tunnels. Against it:
+**§4's third column says a host restart behaves as a relay restart, and that
+claim is only true with step 4.** A spec that promised the middle column and
+skipped the fsyncs would be making the right-hand column's promise on a
+heuristic.
+
+**What is still not guaranteed, and this is the honest boundary.** `fsync`
+returns when the filesystem says the data is durable. A disk with a lying write
+cache, a virtualised block device that acknowledges early, or an `fsync` that
+fails and is not retried leave the guarantee where POSIX leaves it. This spec
+claims what POSIX gives and no more, and it does not claim the reservation set
+survives a disk that lies.
+
+### 14.2 · Question 2 — a corrupt file at boot: **start empty, log ERROR, and move the file aside**
+
+The two candidates are opposite products and both are defensible, which is why
+§7 sent them to a reviewer. The reasons for the one taken:
+
+**Refusing to start is the wrong failure, and its cost is not the reservation
+set.** A relay that will not come up over a damaged reservations file has
+turned a namespace-bookkeeping problem into a **total outage of every path**,
+including the anonymous path — a tunnel from one command with no account —
+which has no dependence on this file at all. On this deployment it also means
+`sshsteward` does not come back, and that tunnel is `RESOURCES.md` §4's route to
+the host. **A restart that can fail to complete is precisely the thing Q-014 is
+open about**, and slice 2 must not add a new way for one to.
+
+**Starting empty is not silent, and it degrades to a shipped behaviour rather
+than to an unspecified one.** What a relay with an empty reservation set does is
+exactly what every release before this one did: every name is unclaimed and
+trust-on-first-use. That is a known product, not a hole.
+
+**The threat model does not favour refusing, either** (L-004). The party who can
+corrupt this file is the party with write access to the relay's state directory,
+and that party can also delete it, rewrite it to grant themselves every name,
+read every digest in it, or stop the process. *Corrupt the file to clear the
+namespace* is not a new capability; it is a strictly weaker use of one that
+already defeats the scheme.
+
+**So the rule, and the three parts are not optional:**
+
+1. **Start with an empty set** and serve.
+2. **Log at ERROR**, once, naming the path and the parse error. Not `Warn`: a
+   set of ownership records has been lost and the operator is the only party who
+   can tell whether that matters.
+3. **Rename the damaged file to `<path>.corrupt-<RFC3339 UTC>`** before the
+   first write replaces it. Without this, the first claim after the restart
+   overwrites the only evidence of what went wrong. If that rename fails, log
+   and continue — evidence preservation must not be the thing that stops the
+   relay either.
+
+**Absent is not corrupt.** `os.IsNotExist` on the first read is the ordinary
+first boot: empty set, **no error, no ERROR log, no file moved aside**. A store
+that shouted on first boot would train an operator to ignore it.
+
+**Unreadable is corrupt for this purpose.** A permissions or I/O error reading
+an existing file takes the same path as a parse error. It is a different cause
+with the same available responses, and one rule with one behaviour is worth more
+than two rules that a reader has to hold apart. **There is no flag to choose
+the other product**, because the operator who would set it is the operator who
+is not there.
+
+### 14.3 · Question 3 — two relays over one path: **refused, with a lock, not with a sentence**
+
+§8 already records concurrent relays as *"not addressed in either slice. There
+is one relay."* **Slice 2 makes leaving it unaddressed worse than it was**, and
+that is the finding this question deserved: each relay holds a full in-memory
+copy and each write replaces the **whole document**, so two relays over one path
+do not interleave or corrupt — they take turns silently destroying each other's
+claims, and the loser learns at the next restart. That is a new failure mode
+created by this slice, and it produces exactly the loss the slice exists to
+remove.
+
+**Decision: the store takes an exclusive advisory lock and a second relay over
+the same path refuses to start**, with an error naming the path.
+
+- **`flock(2)`, `LOCK_EX|LOCK_NB`, on a sibling `<path>.lock`** — *not* on
+  `<path>` itself, because `<path>` is replaced by rename on every write and a
+  lock on the old inode guards nothing.
+- Held for the life of the store and released by `Close`. **A crash needs no
+  cleanup**: the kernel drops `flock` locks when the file description closes,
+  so there is no stale-lock path and no lock file to delete by hand.
+- **`Close` is why `relay.Relay` gains a `Close` method.** D-1 shuts the first
+  relay down before constructing the second over the same path, and `flock`
+  conflicts between two file descriptions *in the same process*, so D-1 is also
+  what proves the lock is released rather than leaked.
+- **Honest limit:** `flock` is advisory and its behaviour over NFS and some
+  network filesystems is not the local one. A relay whose state directory is on
+  such a filesystem gets the documented refusal on a best-effort basis. This is
+  stated rather than defended: the answer to *may two relays share a path* is
+  **no**, and the lock is how the common case is enforced, not a proof.
+
+### 14.4 · The document
+
+One JSON object, written whole:
+
+```json
+{
+  "version": 1,
+  "reservations": [
+    {"subdomain": "myapi", "token_hash": "<hex sha256>", "tcp_port": 20000,
+     "last_seen": "2026-09-01T06:24:00Z"}
+  ]
+}
+```
+
+`version` exists so that a future format change is **detectable rather than
+guessed at**. A document whose `version` is not `1` is not parsed further and
+takes §14.2's corrupt path — start empty, log, move aside. Refusing to start on
+a version from the future would be the same total outage §14.2 declines, and
+guessing at it would be worse than either.
+
+The set is written **sorted by subdomain**, so two identical sets produce
+identical bytes and a diff of two store files is a diff of their contents rather
+than of Go's map iteration order.
+
+### 14.5 · `LastSeen`, the 30-day sweep, and the cap
+
+**`Reservation.LastSeen time.Time`** — the field §5.1 deliberately did not ship
+ahead of its reader. Slice 2 is the reader.
+
+- **Set by `Claim`, and by nothing else.** Both branches: a new claim and an
+  owner returning to one it already holds. `Check` still records nothing and
+  still says so — a stranger being refused a name must not refresh its owner's
+  clock, and an owner who reconnects presents a token and therefore goes through
+  `Claim` (§5.3: a token at or over `MinTokenLen` takes the claim path).
+- **`ReservationTTL = 30 * 24 * time.Hour`,** swept **at load only**. No timer,
+  no goroutine, no sweep on write. A relay that runs for sixty days holds a
+  fifty-day-idle name until it restarts, and that is the trade taken on purpose:
+  the alternative is a background writer racing the handshake path for the same
+  document, for an expiry whose whole purpose is to bound *long-term* namespace
+  growth.
+- **A record whose `last_seen` is the zero time is treated as seen at load
+  time**, not as the epoch. It is kept and given a fresh thirty days. Reading
+  zero as the epoch would drop every such record instantly, and losing a whole
+  namespace to a missing field is a much worse failure than holding one name
+  thirty days too long. (No such document can exist today — this is format
+  version 1 and there is no earlier one — so this rule is about the next format,
+  and it is written now because the cheap moment to write it is now.)
+- **`MaxReservations = 10000`,** a cap on the **set**, not per token. At the cap,
+  `Claim` refuses a **new** name with `ErrReservationsFull`. **An owner returning
+  to a name already in the set is never refused by the cap** — a cap that could
+  lock out an existing owner would destroy the property the whole slice exists
+  to establish. The number is chosen so that the full-document rewrite stays
+  trivial (10,000 records at roughly 150 bytes is about 1.5 MB) while sitting far
+  above any plausible legitimate use of one relay.
+
+  **What the cap is and is not.** It bounds unbounded disk growth by an
+  unbounded claimer. It is **not** a defence against namespace exhaustion: a
+  party who can complete 10,000 handshakes can fill the set and refuse everyone
+  else a new name until the sweep or a restart. Before the cap that party filled
+  the disk instead. Both are bad; the cap picks the bounded one and this spec
+  does not dress it up as protection. §8's *"nothing bounds how many names one
+  token may claim"* is unchanged and stays true.
+
+### 14.6 · The write path, and what a failed write does
+
+**Every mutation writes the whole document, synchronously, on the calling
+goroutine, under the same lock that guards the maps.** No queue, no batching, no
+background flusher: a claim that has returned to the handshake has been written,
+which is the only way `Claim`'s return value can mean what §14.1 says it means.
+
+The two mutators answer a failed write differently, and the asymmetry is
+deliberate:
+
+- **`Claim` rolls back and returns the error.** The in-memory set is restored to
+  exactly what it was — the record deleted if this call created it, the previous
+  value restored if it did not, and any port hold undone with it — and the
+  handshake is refused with the write error as its reason. **A claim that cannot
+  be persisted is not a claim**, because the only thing a claim promises over a
+  plain registration is that it survives the process. Refusing is honest, and it
+  costs nothing to the anonymous path, which never reaches this code.
+- **`Discard` removes the record from memory regardless, and reports the write
+  error to its caller** (its signature gains an `error`; a call used as a
+  statement is unaffected, so no frozen case moves). `Discard` exists to keep
+  §5.1's invariant — *a name is not consumed by a connection that never opened* —
+  and making it fail would leave in memory the very claim it was called to
+  remove. `relay.discardClaim` logs the error at ERROR and continues.
+
+**The residual this asymmetry leaves, named rather than smoothed over:** a
+handshake whose `Claim` write **succeeded** and whose bind then failed, and
+whose `Discard` write then failed, leaves a record on disk that memory does not
+have. It returns at the next restart, and the name is then held for up to
+`ReservationTTL` by a token whose handshake never opened a tunnel. It requires
+two writes to the same file to disagree within one handshake. It is a real hole,
+it is bounded by the sweep, and it is written here rather than discovered later.
+
+### 14.7 · The change · slice 2
+
+- **`core/reservationstore.go` — new.** `store` — open/lock/load/sweep/write for
+  one path. `OpenReservations(path string) (*Reservations, error)` returns a set
+  backed by it; `(*Reservations).Close() error` releases the lock.
+  `NewReservations()` is unchanged and still returns an unbacked set, so every
+  existing caller and every frozen case keeps exactly today's behaviour.
+- **`core/reservation.go`** — `LastSeen` on `Reservation`; `Claim` stamps it and
+  persists; `Discard` persists and returns `error`; `ErrReservationsFull` and
+  the cap; `ErrStoreLocked` for §14.3.
+- **`relay/relay.go`** — `Config.ReservationsPath string`. Empty means an
+  in-memory set, **exactly as today**. **Setting both `Reservations` and
+  `ReservationsPath` is refused by `New`**, at startup, for the same reason
+  `PublicScheme` is validated there: two sources of truth for one set is an
+  operator's typo that should be a refusal to start rather than a silent choice
+  between them. `Relay.Close() error` closes what `New` opened and nothing else
+  — a relay handed a `Reservations` it did not open does not close it.
+- **`cmd/pumasi-relay`** — `-reservations <path>`, default `""`. A twelfth flag.
+  Empty is today's relay in every respect: no file, no lock, no sweep, no write.
+
+### 14.8 · What slice 2 still does not do
+
+- **It does not shorten an outage, and no surface may say it does.** A live TCP
+  connection cannot outlive the process at either end (§4). What already bounds
+  the outage is the agent's 1 s → 30 s backoff and the operator's keepalive.
+  What slice 2 removes is the **loss**: after a restart an in-memory set is
+  empty, so every claimed name is trust-on-first-use again for the length of the
+  reclaim window, and that window is where the unrecoverable loss lives.
+- **It does not give an ssh client a reservation** (§8, slice 3).
+- **It does not seed a reservation for the operator** (§7, slice 3). Trust on
+  first use is still the only way a name is claimed, so §8's first bullet is
+  unchanged: a stranger may still claim a name before its rightful user does,
+  **once**.
+- **It does not survive a disk that lies about `fsync`** (§14.1).
+
+### 14.9 · Acceptance cases added by this amendment
+
+Added to [`acceptance/CASES.md`](acceptance/CASES.md) in a new section. **D-1 is
+not edited and no other existing row is edited.**
+
+| # | Case | Fails when |
+|---|---|---|
+| **D-2** | A crash mid-write leaves the **previous** set, not half of one. | The document is written in place, so an interrupted write leaves a truncated file and the whole set is lost at the next load. |
+| **D-3** | A record idle longer than `ReservationTTL` is gone after a load; one inside it is still there. | Nothing sweeps, so a claim-on-first-use namespace grows forever and a name is never recoverable from an owner who has vanished. |
+| **D-4** | At `MaxReservations`, a new name is refused and an existing owner is still admitted. | The cap is applied to every `Claim`, so the set fills and locks its own owners out — the property the slice exists to establish, destroyed by the guard added to bound it. |
+| **D-5** | A corrupt file starts the relay **empty** rather than not at all, and the damaged bytes are still on disk afterwards. | The store returns an error that `relay.New` propagates, and a damaged bookkeeping file becomes a total outage; or it starts empty and the first write destroys the evidence. |
+| **D-6** | A second store over a path a live store holds is refused. | Two relays share a path, and each full-document write silently destroys the other's claims. |
+
+**D-2 is demonstrated, not asserted.** The write path is driven to fail
+**after** the temp file exists and **before** the rename, and the set that
+loads afterwards is checked to be the previous one, record for record.

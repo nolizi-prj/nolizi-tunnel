@@ -90,3 +90,31 @@ direction.**
 |---|---|---|---|
 | **C-8** | **A claim is not consumed by losing to a squatter.** An anonymous agent holds the unclaimed `myapi`. A token-holder arrives: its `Claim` succeeds and its `Register` is refused `ErrNameTaken`. When the squatter later drops, an **anonymous** agent asking for `myapi` is still given it — the failed handshake left no claim. | `relay.TestAClaimIsNotConsumedByLosingToASquatter` | The rollback guard asks *"is anything registered on this name"* rather than *"is the live tunnel this claim's own"*. The squatter suppresses the discard, and a name is consumed permanently by a handshake that never opened a tunnel — `SPEC.md` §5.1's invariant, broken by the clause added to defend it. **The only case in the suite that reddens on it** (§10, M6). |
 | **C-9** | **A discarded claim gives its public port back.** A handshake claims `bindfail` with a port whose bind then fails. Once the port is genuinely free, an unrelated anonymous agent asking for any TCP port is given that number. | `relay.TestADiscardedClaimReturnsItsPort` | `discardClaim` drops the reservation and leaves the pool's hold, so a number is unallocatable for the life of the relay with nothing owning it — the held state made permanent by the path that exists to undo it. **The only case that reddens on it** (§10, M7). |
+
+## Added 2026-09-01 before slice 2's code, by the spec amendment `SPEC.md` §14
+
+**No row above is edited by this addition, including D-1**, which stands exactly
+as it was frozen: a second `relay.New` over the same path, never a reconnect.
+These rows arrive by the route §13 used for C-8 and C-9 — a spec amendment in
+the open, taken to a fresh cross-family spec review *before* the code they
+describe exists.
+
+`SPEC.md` §14 is where each of these gets its reason; the *Fails when* column is
+what execution makes it red, as every row in this file has to be
+([L-006](https://github.com/pumasi-ai/pumasi/blob/main/lessons/L-006-tests-that-cannot-fail.md)).
+
+### The store, in `core` — `core/reservationstore_test.go`
+
+| # | Case | Go test | Fails when |
+|---|---|---|---|
+| **D-2** | **A crash mid-write leaves the previous set.** A store holds a claim on `first`. A second claim's write is made to fail **after the temp file exists and before the rename**. A store opened afterwards over the same path holds `first` and its port, record for record, and does not hold the second name. | `core.TestACrashMidWriteLeavesThePreviousSet` | The document is written in place rather than temp-and-renamed, so the interrupted write leaves a truncated file and the *whole* set — not just the new claim — is gone at the next load. |
+| **D-3** | **An idle reservation is swept at load, and a live one is not.** A file is written by hand holding two records, one `last_seen` 31 days old and one 29 days old. A store opened over it holds the second and not the first, and the first's port hold is gone with it. | `core.TestAnIdleReservationIsSweptAtLoad` | Nothing sweeps, so a name is held forever for an owner who has vanished; or the sweep drops by name and leaves the port held, so a number is unallocatable with nothing owning it. |
+| **D-4** | **The cap refuses a new name and never an existing owner.** With `MaxReservations` names claimed, a claim on a **new** name is refused `ErrReservationsFull` and a claim by the **existing** owner of a name already in the set succeeds. | `core.TestTheCapRefusesANewNameAndNotAnOwner` | The cap is applied to every `Claim`, so a full set locks its own owners out — the property this whole spec exists to establish, destroyed by the guard added to bound it. |
+| **D-5** | **A corrupt file yields an empty set, an error the caller can see, and the damaged bytes still on disk.** A store opened over a file of garbage returns a usable empty set; the original bytes are readable afterwards under a `.corrupt-` name; and a name is claimable. | `core.TestACorruptStoreStartsEmptyAndKeepsTheEvidence` | `OpenReservations` returns an error instead of a set, so a damaged bookkeeping file becomes a total outage of every path including the anonymous one; or it starts empty and the first write destroys the only evidence of what went wrong. |
+| **D-6** | **A second store over a held path is refused.** With one store open over a path, opening a second over the same path fails with `ErrStoreLocked`; after the first is `Close`d, the second succeeds. | `core.TestTwoStoresMayNotShareAPath` | Nothing locks, so two relays each write the whole document and take turns silently destroying each other's claims — the loss this slice exists to remove, reintroduced by the slice. |
+
+### Through the relay — `relay/reservation_test.go`
+
+| # | Case | Go test | Fails when |
+|---|---|---|---|
+| **D-7** | **An empty `-reservations` is exactly today's relay.** With `ReservationsPath` empty, C-1's sequence still holds and no file is created anywhere the relay was pointed. | `relay.TestNoReservationsPathIsTodaysRelay` | The store is opened unconditionally, so a relay run without the flag writes a file, takes a lock, or refuses to start — a change to the behaviour of every existing deployment, made by a flag nobody set. |
