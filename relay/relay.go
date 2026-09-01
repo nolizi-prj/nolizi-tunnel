@@ -403,19 +403,30 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, string,
 // failure on a first connection leaves the name claimable by a stranger for as
 // long as the owner takes to retry.
 //
-// It will not pull a reservation out from under a live tunnel, and that guard
-// is load-bearing rather than defensive. Two connections presenting the SAME
-// token for the same name race: the first to Claim creates the reservation,
-// the second finds it already its own and creates nothing. Whichever loses
-// Register gets ErrNameTaken — and if that is the one that created the claim,
-// discarding here would destroy the reservation while the winner is registered
-// on it, leaving a tunnel the registry calls Reserved whose name is free the
-// moment it drops. Asking the registry first costs one RLock and closes it.
+// It will not pull a reservation out from under the tunnel that reservation
+// belongs to, and the shape of that guard is narrower than it first looks.
+//
+// Two connections presenting the SAME token for the same name race: the first
+// to Claim creates the reservation, the second finds it already its own and
+// creates nothing. Whichever loses Register gets ErrNameTaken — and if that is
+// the one that created the claim, discarding here would destroy the
+// reservation while the winner is registered on it, leaving a tunnel the
+// registry calls Reserved whose name is free the moment it drops.
+//
+// But "something is registered on this name" is the WRONG test for that, and
+// getting it wrong is a defect of its own. The common case is an anonymous
+// agent squatting an unclaimed name when a token-holder arrives: Claim
+// succeeds, Register refuses ErrNameTaken, and suppressing the discard there
+// would consume the name by a connection that never opened — precisely what
+// spec/0004 §5.1 says cannot happen. The two are told apart by whether the
+// LIVE tunnel is the claim's own: only a co-claimant registers Reserved on a
+// name this handshake has just claimed, because before that claim there was
+// nothing to be reserved by.
 func (r *Relay) discardClaim(subdomain string) {
 	if subdomain == "" {
 		return
 	}
-	if r.registry.Has(subdomain) {
+	if live, err := r.registry.Lookup(subdomain + "." + r.cfg.BaseDomain); err == nil && live.Reserved {
 		return
 	}
 	if held, ok := r.reservations.Get(subdomain); ok && held.TCPPort != 0 && r.pool != nil {

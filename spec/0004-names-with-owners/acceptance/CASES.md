@@ -83,3 +83,10 @@ measured against a case that existed before its implementation did, and so that
 no reader of a green slice-1 suite concludes the restart half was delivered.
 **A green run of the cases above is not evidence about D-1 in either
 direction.**
+
+## Added after the freeze, on a second cited objection — `SPEC.md` §13
+
+| # | Case | Go test | Fails when |
+|---|---|---|---|
+| **C-8** | **A claim is not consumed by losing to a squatter.** An anonymous agent holds the unclaimed `myapi`. A token-holder arrives: its `Claim` succeeds and its `Register` is refused `ErrNameTaken`. When the squatter later drops, an **anonymous** agent asking for `myapi` is still given it — the failed handshake left no claim. | `relay.TestAClaimIsNotConsumedByLosingToASquatter` | The rollback guard asks *"is anything registered on this name"* rather than *"is the live tunnel this claim's own"*. The squatter suppresses the discard, and a name is consumed permanently by a handshake that never opened a tunnel — `SPEC.md` §5.1's invariant, broken by the clause added to defend it. **The only case in the suite that reddens on it** (§10, M6). |
+| **C-9** | **A discarded claim gives its public port back.** A handshake claims `bindfail` with a port whose bind then fails. Once the port is genuinely free, an unrelated anonymous agent asking for any TCP port is given that number. | `relay.TestADiscardedClaimReturnsItsPort` | `discardClaim` drops the reservation and leaves the pool's hold, so a number is unallocatable for the life of the relay with nothing owning it — the held state made permanent by the path that exists to undo it. **The only case that reddens on it** (§10, M7). |

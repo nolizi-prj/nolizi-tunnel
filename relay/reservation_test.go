@@ -536,3 +536,83 @@ func TestAFailedHandshakeLeavesNoClaim(t *testing.T) {
 		t.Error("the anonymous agent's tunnel reports Reserved; the failed handshake's claim is still there")
 	}
 }
+
+// C-8 · A claim is not consumed by losing to a squatter.
+//
+// Fails when the rollback guard tests "is anything registered on this name"
+// instead of "is the live tunnel this claim's own": an anonymous agent holding
+// an unclaimed name suppresses the discard, and the token-holder's failed
+// handshake leaves a permanent claim on a name it never opened a tunnel on.
+// Added after the freeze on a cited spec review (SPEC.md §13).
+func TestAClaimIsNotConsumedByLosingToASquatter(t *testing.T) {
+	r, addr := resRelay(t, relay.Config{})
+
+	// An anonymous agent is sitting on an unclaimed name. This is the normal
+	// state of every anonymous tunnel, not an exotic one.
+	squatter, respSquat, err := handshake(t, addr, core.AuthRequest{Subdomain: "myapi"})
+	if err != nil {
+		t.Fatalf("the anonymous agent was refused: %v", err)
+	}
+	if respSquat.Subdomain != "myapi" {
+		t.Fatalf("the anonymous agent got %q, want \"myapi\"", respSquat.Subdomain)
+	}
+
+	// A token-holder arrives for that name. Claim succeeds — nobody had
+	// claimed it — and then Register refuses it as live.
+	if _, _, err := handshake(t, addr, core.AuthRequest{Subdomain: "myapi", Token: resOwnerToken}); err == nil {
+		t.Fatal("the token-holder was registered on a name already live")
+	} else if !strings.Contains(err.Error(), core.ErrNameTaken.Error()) {
+		t.Fatalf("the token-holder got %v, want the registry's ErrNameTaken", err)
+	}
+
+	// The claim that handshake created must be gone: it never opened a tunnel.
+	squatter.Close()
+	waitGone(t, r, "myapi")
+
+	conn, resp, err := handshake(t, addr, core.AuthRequest{Subdomain: "myapi"})
+	if err != nil {
+		t.Fatalf("an anonymous agent is refused myapi by a claim whose handshake never opened a tunnel: %v", err)
+	}
+	defer conn.Close()
+	if resp.Subdomain != "myapi" {
+		t.Errorf("got %q, want \"myapi\"", resp.Subdomain)
+	}
+}
+
+// C-9 · A discarded claim gives its public port back to the pool.
+//
+// Fails when discardClaim drops the reservation but leaves the pool's hold, so
+// a number is unallocatable for the life of the relay with nothing owning it —
+// the held state made permanent by the path that exists to undo it.
+func TestADiscardedClaimReturnsItsPort(t *testing.T) {
+	low, _ := resPorts()
+
+	squatter, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", low))
+	if err != nil {
+		t.Fatalf("could not occupy the public port for this case: %v", err)
+	}
+
+	_, addr := resRelay(t, relay.Config{
+		TCPPortLow: low, TCPPortHigh: low, TCPBindHost: "127.0.0.1",
+	})
+
+	// The bind fails, so the handshake fails after the claim was created.
+	if _, _, err := handshake(t, addr, core.AuthRequest{
+		Subdomain: "bindfail", Token: resOwnerToken, TCP: true, TCPPort: low,
+	}); err == nil {
+		t.Fatal("the handshake succeeded; this case needs the bind to fail")
+	}
+
+	// Free the port and let an unrelated anonymous agent ask for one. If the
+	// hold outlived the discarded claim, the pool reports itself empty.
+	squatter.Close()
+
+	conn, resp, err := handshake(t, addr, core.AuthRequest{TCP: true})
+	if err != nil {
+		t.Fatalf("the port is still held by a claim that was discarded: %v", err)
+	}
+	defer conn.Close()
+	if want := fmt.Sprintf("pumasi.link:%d", low); resp.TCPAddr != want {
+		t.Errorf("got %q, want %q", resp.TCPAddr, want)
+	}
+}

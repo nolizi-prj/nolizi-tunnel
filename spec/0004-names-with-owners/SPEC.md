@@ -202,6 +202,18 @@ A third state, `held` — *claimed by a tenant, not currently allocated*:
 - `AllocateSpecific(port, owner)` succeeds when the port is unheld **or** held
   by `owner`, and returns `ErrPortOutOfRange`-class refusal otherwise.
 
+**When the relay enters and leaves the held state**, which the first draft of
+this section left unstated and no case pinned. A hold is taken in `authorize`,
+from the reservation, **before the pool is asked for anything** — otherwise a
+generic request could be walking onto the number while this handshake is
+deciding it is spoken for. It is taken on *every* handshake for a reservation
+that carries a port, not only the first, so it is idempotent by construction.
+**Nothing takes it on the disconnect side, and nothing needs to:** the hold was
+never released, because `ReleaseOwner` clears `inUse` only. The single place a
+hold is given up is `discardClaim`, which `Unhold`s alongside the reservation it
+is undoing — otherwise a discarded claim would strand a number nothing owns for
+the life of the process. C-9 is that case.
+
 **This makes the pool's `owner` string load-bearing, so it changes from the
 agent id to the subdomain.** An agent id is minted fresh on every connection
 (`newAgentID`), so a hold keyed by one could never match on reconnect — which is
@@ -395,6 +407,8 @@ enforce, **and that the gap is how a second L-006 defect reached the freeze**
 | **MC4** | `Claim` ignores port conflicts | R-6, R-7 | **both RED** |
 | **MC5** | `Discard` does nothing | R-8 | **RED** |
 | **MC6** | `Check` never consults the reservation set | R-2, R-3 | **R-2 RED, R-3 GREEN** |
+| **M6** | the §11 guard in its **over-broad** form — suppress the rollback whenever anything is registered, not only the claim's own tunnel | every relay case | **C-8 RED, and C-8 alone** |
+| **M7** | `discardClaim` drops the claim and leaks the pool hold | C-9, C-2, C-7 | **C-9 RED, and C-9 alone** |
 
 **C-1's red run is the live defect reproduced in a test.** Its first failure
 line under M1 is `an anonymous agent asking for myapi got <nil>, want
@@ -507,9 +521,76 @@ something else before the agent arrives, so the relay claims the name,
 allocates the port and then cannot bind it; the agent is refused; and an
 *anonymous* agent afterwards is **given** that name, because nobody owns it.
 It is falsifiable and was falsified — §10, M5. And **§10's table is now
-complete**, with a mutation for all sixteen built cases.
+complete**, with a mutation for every built case. *(That sentence originally
+said "sixteen"; there were seventeen, and §13 adds two more. The table was
+complete; the count beside it was not — noted by the same review.)*
 
 **What was not changed, and why.** The frozen cases C-1 to C-6, R-1 to R-7 and
 P-1 to P-2 are untouched; their assertions were not in question. No frozen case
 from `spec/0001`-`0003` is touched either, so **Q-030** still gets no third
 instance from this work.
+
+## 13 · Amended a third time, on a second cited objection from the same family
+
+`reviews/20260831-235635-spec-glm.md` returned a second `VERDICT: OBJECT`, on
+the **§11 guard added in answer to the first one**. It was right, and the shape
+of the mistake is worth more than the fix.
+
+### Objection 1 — the guard was correct about the case it was written for and wrong about the common one
+
+§11 suppressed the rollback whenever *anything* was registered on the name. The
+hazard it was written for is a **co-claimant** — two connections with one token.
+But the ordinary state of this relay is an **anonymous agent sitting on an
+unclaimed name**, and when a token-holder arrives there: `Claim` succeeds,
+`Register` refuses `ErrNameTaken`, and the guard suppressed the discard because
+the registry had the name. **The claim then persisted on a name whose claimant
+never opened a tunnel** — exactly what §5.1 declares impossible, contradicted by
+the clause added to defend §5.1. And no case could fail on it: C-7 exercises
+only the registry-empty path, and §11's in-package test asserts the guarded
+branch as *correct*. Its two poles sat either side of the state that was wrong.
+
+**The fix is a narrower discriminator**, and it is the one the hazard analysis
+should have named in the first place: suppress only when the **live tunnel is
+the claim's own** — `Reserved` true. Only a co-claimant can be registered
+`Reserved` on a name *this* handshake has just claimed, because before that
+claim there was nothing to be reserved by. A squatter is `Reserved` false, and
+the discard proceeds. **C-8** is the case, and under the old guard it is the
+**only** case in the suite that goes red (§10, M6).
+
+**The corollary the objection also caught.** §9 narrowed C-4 on the premise that
+the reservation set and a live tunnel's `Reserved` never disagree in a reachable
+slice-1 state, and §11's guard falsified it: the squatter's tunnel was
+registered before the claim existed. With the narrowed guard the disagreement is
+**transient and confined to a failing handshake** — it exists between the
+token-holder's `Claim` and its `Discard`, and no steady state carries it. That
+is weaker than §9's original "in every reachable state" and this spec says the
+weaker thing rather than restating the stronger one.
+
+### Objection 2 — a held state with no clause saying when it is entered
+
+§5.2 introduced `Hold`/`Unhold`/`Holder` and assigned them no caller. The
+implementation had one, but the spec did not, and **C-2 cannot tell the
+difference** between "released to held" and other designs. §5.2 now states the
+transition, and **C-9** pins the half that no case observed at all: a discarded
+claim gives its port back, rather than stranding a number nothing owns for the
+life of the process. Under a leaked hold, C-9 is the only case that goes red
+(§10, M7).
+
+### The pattern, which is the third instance of one thing
+
+C-4, R-8 and now §11's guard were each **a clause whose truth no execution
+could reach**. The first two were caught by reviewers; this one was *introduced
+by the fix for the second*. What survives it: a guard added to protect an
+invariant needs a case that fails when the guard is wrong, not only one that
+passes when it is right — and §11's in-package test, which asserts the guarded
+branch is correct, is exactly the test that cannot notice a guard firing too
+often.
+
+### Minor items from the same review, closed without objection
+
+- §12 said "sixteen built cases" where there were seventeen. Corrected there.
+- `CASES.md`'s preamble said "every case sequences a disconnect and a second
+  connection" — false of the ten `core` cases. Scoped to the C-cases.
+- §5.1's `Check` refusing short tokens is dead-path symmetry, since §5.3 never
+  calls `Check` with a token. Kept deliberately: a primitive that is safe only
+  because of its caller is one refactor from being unsafe.
