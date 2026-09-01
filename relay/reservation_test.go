@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -614,5 +616,122 @@ func TestADiscardedClaimReturnsItsPort(t *testing.T) {
 	defer conn.Close()
 	if want := fmt.Sprintf("pumasi.link:%d", low); resp.TCPAddr != want {
 		t.Errorf("got %q, want %q", resp.TCPAddr, want)
+	}
+}
+
+// ─── Slice 2 · durability ────────────────────────────────────────────────────
+//
+// D-1 and D-7 for spec/0004-names-with-owners, acceptance/CASES.md. D-1 was
+// frozen with the slice-1 cases and left unbuilt on purpose; it had no Go test
+// in this tree at all until this packet, which is why a suite that passed 425
+// of 425 said nothing whatever about the relay-restart half. An absent case
+// cannot fail.
+//
+// WHAT MAKES D-1 D-1 AND NOT C-1 AGAIN: the second relay is a second
+// relay.New over the same PATH, not a second handshake against the same
+// process. A reconnect proves slice 1 and is evidence about the LEFT column of
+// SPEC.md §4; only a second construction is evidence about the middle one. If
+// this test is ever rewritten to reuse `r`, it has stopped being this case.
+
+// D-1 · A reservation outlives the process.
+//
+// Fails when the reservation set is in memory, so the second relay starts
+// empty and answers the anonymous agent yes.
+func TestAReservationOutlivesTheRelay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reservations.json")
+	low, _ := resPorts()
+	// A range of exactly one, for C-2's reason: "the pool refused" and "the
+	// pool happened to pick something else" cannot then be confused.
+	cfg := relay.Config{
+		ReservationsPath: path,
+		TCPPortLow:       low, TCPPortHigh: low, TCPBindHost: "127.0.0.1",
+	}
+
+	// ── The first process's worth of state.
+	r1, addr1 := resRelay(t, cfg)
+	conn, resp, err := handshake(t, addr1, core.AuthRequest{
+		Subdomain: "myapi", Token: resOwnerToken, TCP: true, TCPPort: low,
+	})
+	if err != nil {
+		t.Fatalf("the owner's first connection was refused: %v", err)
+	}
+	if want := fmt.Sprintf("pumasi.link:%d", low); resp.TCPAddr != want {
+		t.Fatalf("the owner got %q, want %q", resp.TCPAddr, want)
+	}
+	conn.Close()
+	waitGone(t, r1, "myapi")
+
+	// The shutdown. Everything the first relay held — the lock on the store
+	// included — goes back here, and the next line is a different process's
+	// worth of state in every respect this test can reach.
+	if err := r1.Close(); err != nil {
+		t.Fatalf("closing the first relay: %v", err)
+	}
+
+	// ── A second relay.New over the same path. NOT a reconnect.
+	r2, addr2 := resRelay(t, cfg)
+	t.Cleanup(func() { r2.Close() })
+
+	// The name is still owned, to both shapes of stranger.
+	if _, _, err := handshake(t, addr2, core.AuthRequest{Subdomain: "myapi"}); !refusalOf(err, core.ErrNameReserved) {
+		t.Errorf("after a restart, an anonymous agent asking for myapi got %v, want ErrNameReserved", err)
+	}
+	if _, _, err := handshake(t, addr2, core.AuthRequest{Subdomain: "myapi", Token: resStrangerToken}); !refusalOf(err, core.ErrNameReserved) {
+		t.Errorf("after a restart, a stranger with a token asking for myapi got %v, want ErrNameReserved", err)
+	}
+	// And so is the port. On a one-port range the honest answer to a stranger
+	// asking for any public port is that the pool is empty.
+	if _, _, err := handshake(t, addr2, core.AuthRequest{TCP: true}); err == nil {
+		t.Error("after a restart, a stranger asking for any TCP port was handed the one held by myapi")
+	} else if !strings.Contains(err.Error(), "no free public TCP port") {
+		t.Errorf("after a restart, a stranger asking for any TCP port got %v, want the pool reported empty", err)
+	}
+
+	// The owner gets both back from a relay that never saw it connect.
+	conn2, resp2, err := handshake(t, addr2, core.AuthRequest{
+		Subdomain: "myapi", Token: resOwnerToken, TCP: true, TCPPort: low,
+	})
+	if err != nil {
+		t.Fatalf("after a restart, the owner was refused its own name: %v", err)
+	}
+	defer conn2.Close()
+	if resp2.Subdomain != "myapi" {
+		t.Errorf("the owner came back onto %q, want \"myapi\"", resp2.Subdomain)
+	}
+	if want := fmt.Sprintf("pumasi.link:%d", low); resp2.TCPAddr != want {
+		t.Errorf("the owner came back onto %q, want %q", resp2.TCPAddr, want)
+	}
+}
+
+// D-7 · An empty ReservationsPath is exactly today's relay.
+//
+// Fails when the store is opened unconditionally, so a relay run without the
+// flag writes a file, takes a lock, or refuses to start — a change to the
+// behaviour of every existing deployment, made by a flag nobody set.
+func TestNoReservationsPathIsTodaysRelay(t *testing.T) {
+	dir := t.TempDir()
+	r, addr := resRelay(t, relay.Config{}) // no ReservationsPath
+	t.Cleanup(func() { r.Close() })
+
+	// C-1's sequence, unchanged: ownership still works without a store.
+	conn, _, err := handshake(t, addr, core.AuthRequest{Subdomain: "myapi", Token: resOwnerToken})
+	if err != nil {
+		t.Fatalf("the owner's connection was refused: %v", err)
+	}
+	conn.Close()
+	waitGone(t, r, "myapi")
+	if _, _, err := handshake(t, addr, core.AuthRequest{Subdomain: "myapi"}); !refusalOf(err, core.ErrNameReserved) {
+		t.Errorf("an anonymous agent asking for myapi got %v, want ErrNameReserved", err)
+	}
+
+	// And nothing was written anywhere. The directory is the one a store
+	// would have had to use if a path had been given; there was none, so it
+	// stays as empty as it started.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the temp dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("a relay with no ReservationsPath left %d file(s) behind: %v", len(entries), entries)
 	}
 }

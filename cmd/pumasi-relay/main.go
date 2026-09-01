@@ -43,6 +43,7 @@ func main() {
 		hostKey    = flag.String("ssh-hostkey", "/var/lib/pumasi-relay/ssh_host_ed25519_key", "path to the relay's ssh host key; generated if absent")
 		publicHost = flag.String("public-host", "", "hostname visitors dial for raw TCP (defaults to -domain)")
 		pubScheme  = flag.String("public-scheme", "http", "scheme tunnel addresses are announced under: http, or https when a TLS terminator sits in front of this relay")
+		resvPath   = flag.String("reservations", "", "file to keep name and port reservations in, so a claim outlives a restart; empty keeps them in memory as before")
 		verbose    = flag.Bool("v", false, "log every routing decision")
 	)
 	flag.Parse()
@@ -62,11 +63,17 @@ func main() {
 		PublicHost:      *publicHost,
 		PublicScheme:    *pubScheme,
 		AgentPublicPort: *agentAddr,
+		// Empty is this relay exactly as every release before it: no file, no
+		// lock, no sweep and no write. With a path, a claimed name and its
+		// public port survive a restart of this process — the connection
+		// never does, and no surface here says otherwise (spec/0004 §4).
+		ReservationsPath: *resvPath,
 	})
 	if err != nil {
 		log.Error("could not start", "error", err)
 		os.Exit(1)
 	}
+	defer r.Close()
 
 	agentLn, err := net.Listen("tcp", *agentAddr)
 	if err != nil {

@@ -51,6 +51,13 @@ type Config struct {
 	// that had no such set at all, and the rules apply from the first claim
 	// onward (spec/0004 §5.3).
 	Reservations *core.Reservations
+	// ReservationsPath is the file the reservation set is kept in, so that a
+	// claim outlives the process (spec/0004 §14). Empty is today's relay in
+	// every respect: no file, no lock, no sweep and no write. Setting this
+	// AND Reservations is refused by New — two sources of truth for one set
+	// is an operator's typo, and it belongs at startup rather than in a
+	// silent choice between them.
+	ReservationsPath string
 	// Logger receives connection and routing events; discarded when nil.
 	Logger *slog.Logger
 	// HandshakeTimeout bounds how long a new connection may take to
@@ -89,6 +96,10 @@ type Relay struct {
 
 	pool         *core.PortPool // nil when this relay serves HTTP only
 	reservations *core.Reservations
+	// ownReservations is the set THIS relay opened from ReservationsPath, and
+	// is nil when the caller supplied one or when there is no path. Close
+	// closes this and never cfg.Reservations.
+	ownReservations *core.Reservations
 
 	mu           sync.RWMutex
 	sessions     map[string]tunnelSession // agent id -> live client connection
@@ -96,6 +107,11 @@ type Relay struct {
 }
 
 // New builds a relay.
+//
+// Anything New opens, it closes again on its own way out: the reservation
+// store takes a lock for the life of the process (spec/0004 §14.3), and a New
+// that returned an error while still holding one would make the next attempt
+// on the same path fail for a reason that is not its own.
 func New(cfg Config) (*Relay, error) {
 	if cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("relay: BaseDomain is required")
@@ -103,8 +119,8 @@ func New(cfg Config) (*Relay, error) {
 	if cfg.Auth == nil {
 		cfg.Auth = AllowAll{}
 	}
-	if cfg.Reservations == nil {
-		cfg.Reservations = core.NewReservations()
+	if cfg.Reservations != nil && cfg.ReservationsPath != "" {
+		return nil, fmt.Errorf("relay: Reservations and ReservationsPath are two sources of truth for one set; give one")
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -116,33 +132,85 @@ func New(cfg Config) (*Relay, error) {
 		cfg.PublicHost = cfg.BaseDomain
 	}
 	// Validated here, at startup, so an operator's typo is a refusal to start
-	// rather than an address handed to every user of this relay.
+	// rather than an address handed to every user of this relay. Before the
+	// store is opened, so a bad scheme does not take and drop a lock.
 	scheme, err := core.ParsePublicScheme(cfg.PublicScheme)
 	if err != nil {
 		return nil, err
 	}
 	cfg.PublicScheme = scheme
 
-	r := &Relay{
-		cfg:          cfg,
-		registry:     core.NewRegistry(cfg.BaseDomain, cfg.PublicScheme),
-		log:          cfg.Logger,
-		reservations: cfg.Reservations,
-		sessions:     make(map[string]tunnelSession),
-		tcpListeners: make(map[string][]*tcpListener),
-	}
+	var pool *core.PortPool
 	if cfg.TCPPortLow != 0 || cfg.TCPPortHigh != 0 {
-		pool, err := core.NewPortPool(cfg.TCPPortLow, cfg.TCPPortHigh)
+		pool, err = core.NewPortPool(cfg.TCPPortLow, cfg.TCPPortHigh)
 		if err != nil {
 			return nil, err
 		}
-		r.pool = pool
 	}
-	return r, nil
+
+	// Last, because it is the only step that acquires something the process
+	// has to give back. A path an operator cannot use is a refusal to start
+	// rather than a promise of durability the relay cannot keep.
+	var own *core.Reservations
+	if cfg.ReservationsPath != "" {
+		opened, err := core.OpenReservations(cfg.ReservationsPath, cfg.Logger)
+		if err != nil {
+			return nil, err
+		}
+		own = opened
+		cfg.Reservations = opened
+	}
+	if cfg.Reservations == nil {
+		cfg.Reservations = core.NewReservations()
+	}
+
+	// The pool is DERIVED from the reservation set, not built beside it. A set
+	// that survived a restart says which public ports are spoken for, and a
+	// pool that started empty would hand the next stranger asking for "any
+	// port" a number this relay has just been told belongs to somebody —
+	// which is half of spec/0004 §4's middle column quietly missing while the
+	// name half looked delivered.
+	if pool != nil {
+		for _, held := range cfg.Reservations.Snapshot() {
+			if held.TCPPort == 0 {
+				continue
+			}
+			if err := pool.Hold(held.TCPPort, held.Subdomain); err != nil {
+				// Out of this pool's range, or held twice. Neither stops the
+				// relay: the name is still owned, and a port outside the
+				// operator's current range is the operator having narrowed it
+				// since the claim, not a fault in the claim.
+				cfg.Logger.Warn("a reserved public port is not in this relay's pool",
+					"subdomain", held.Subdomain, "port", held.TCPPort, "error", err)
+			}
+		}
+	}
+
+	return &Relay{
+		cfg:             cfg,
+		registry:        core.NewRegistry(cfg.BaseDomain, cfg.PublicScheme),
+		log:             cfg.Logger,
+		pool:            pool,
+		reservations:    cfg.Reservations,
+		ownReservations: own,
+		sessions:        make(map[string]tunnelSession),
+		tcpListeners:    make(map[string][]*tcpListener),
+	}, nil
 }
 
 // Registry exposes the routing table, for a status endpoint or a dashboard.
 func (r *Relay) Registry() *core.Registry { return r.registry }
+
+// Close releases what New opened, and nothing else. A relay handed a
+// Reservations it did not open does not close it: the caller who built the set
+// owns its lifetime, and a Close that reached past what it opened would take a
+// lock out from under whoever else was holding the set.
+func (r *Relay) Close() error {
+	if r.ownReservations == nil {
+		return nil
+	}
+	return r.ownReservations.Close()
+}
 
 // ServeAgent runs one agent connection: handshake, registration, then serve
 // until the connection ends. It blocks, so callers run it per accepted
@@ -432,7 +500,15 @@ func (r *Relay) discardClaim(subdomain string) {
 	if held, ok := r.reservations.Get(subdomain); ok && held.TCPPort != 0 && r.pool != nil {
 		r.pool.Unhold(held.TCPPort)
 	}
-	r.reservations.Discard(subdomain)
+	// The name is out of memory either way; the error says only whether the
+	// store agrees, and spec/0004 §14.6 names the residual when it does not.
+	// Logged at ERROR because nothing else in this process can act on it: the
+	// record returns at the next restart and is then held for up to
+	// ReservationTTL by a token whose handshake never opened a tunnel.
+	if err := r.reservations.Discard(subdomain); err != nil {
+		r.log.Error("a discarded claim could not be removed from the reservation store",
+			"subdomain", subdomain, "error", err)
+	}
 }
 
 func (r *Relay) writeFrame(w io.Writer, f core.Frame) error {

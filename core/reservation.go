@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 // A registration and a reservation answer two different questions, and this
@@ -21,9 +22,11 @@ import (
 // this type existed, core.Tunnel had a Reserved field computed from the shape
 // of a request and read by nothing at all.
 //
-// Nothing here does I/O. Making the set outlive the process is spec/0004
-// slice 2 and is not built yet; what is built is ownership, which is what
-// holds a name across the seconds an agent spends reconnecting.
+// The policy here is pure and the I/O is not. A set built by NewReservations
+// does no I/O at all and behaves exactly as it did before slice 2 existed; a
+// set built by OpenReservations (core/reservationstore.go) writes every
+// mutation through to a file, which is what makes ownership outlive the
+// process rather than only the connection.
 
 // Reservation errors.
 var (
@@ -46,11 +49,10 @@ const MinTokenLen = 16
 
 // Reservation is a claim on a name that outlives the connection using it.
 //
-// Every field here is read. There is deliberately no CreatedAt and no
-// LastSeen: expiry belongs to the durable set (slice 2) and arrives with the
-// code that reads it. Shipping a field ahead of its reader is the defect this
-// type exists to repair, and doing it again one struct over would be a poor
-// joke.
+// Every field here is read. LastSeen arrived with slice 2, in the same change
+// as the sweep that reads it — slice 1 declined to ship it early, because
+// shipping a field ahead of its reader is the defect this type exists to
+// repair. There is still no CreatedAt, for the same reason: nothing reads one.
 type Reservation struct {
 	// Subdomain is the claimed name, lowercased.
 	Subdomain string
@@ -59,6 +61,11 @@ type Reservation struct {
 	TokenHash string
 	// TCPPort is the public port claimed alongside the name; 0 for none.
 	TCPPort int
+	// LastSeen is when the owner last proved it held this name, which is to
+	// say the last successful Claim. Check does not touch it: a stranger
+	// being refused a name must not refresh its owner's clock. It is what the
+	// load-time sweep measures ReservationTTL against (spec/0004 §14.5).
+	LastSeen time.Time
 }
 
 // Reservations is the set of claimed names. Safe for concurrent use: the relay
@@ -67,6 +74,11 @@ type Reservations struct {
 	mu     sync.RWMutex
 	byName map[string]Reservation
 	byPort map[int]string // public TCP port -> owning subdomain
+
+	// store is nil for an in-memory set, which is what NewReservations
+	// returns and what a relay with no -reservations path uses. When it is
+	// present every mutation is written through before it is returned.
+	store *store
 }
 
 // NewReservations returns an empty set. An empty set is not a disabled one:
@@ -176,36 +188,93 @@ func (r *Reservations) Claim(subdomain, token string, tcpPort int) (created bool
 		}
 	}
 
+	// The cap is on the SET and it refuses only a NEW name. An owner coming
+	// back to a name already in the set is never refused by it — a cap that
+	// could lock out an existing owner would destroy the property this whole
+	// type exists to establish (spec/0004 §14.5).
+	if !exists && len(r.byName) >= MaxReservations {
+		return false, fmt.Errorf("%w: %d names", ErrReservationsFull, len(r.byName))
+	}
+
 	if !exists {
 		held = Reservation{Subdomain: name, TokenHash: HashToken(token)}
 	}
+	// Enough to undo this call exactly, and no more, if the write fails.
+	before, portAdded := held, false
 	if tcpPort != 0 && held.TCPPort == 0 {
 		held.TCPPort = tcpPort
 		r.byPort[tcpPort] = name
+		portAdded = true
 	}
+	// Set here and nowhere else. This is the one call in which the owner
+	// proves it still holds the name, which is what "last seen" means.
+	held.LastSeen = time.Now()
 	r.byName[name] = held
+
+	// Written through before the claim is returned. A claim that has come
+	// back to the handshake has been persisted, which is the only way its
+	// return value can mean what spec/0004 §14 says it means.
+	if err := r.persist(); err != nil {
+		// Rolled back to exactly what was there. A claim that cannot be
+		// persisted is not a claim: the only thing a claim promises over a
+		// plain registration is that it survives the process, so refusing is
+		// the honest answer and it costs the anonymous path nothing, which
+		// never reaches this code (§14.6).
+		if portAdded {
+			delete(r.byPort, tcpPort)
+		}
+		if exists {
+			r.byName[name] = before
+		} else {
+			delete(r.byName, name)
+		}
+		return false, err
+	}
 	return !exists, nil
 }
 
-// Discard removes a claim.
+// persist writes the set through to its store, if it has one. The caller
+// holds r.mu. An in-memory set returns nil and touches no disk, which is what
+// makes a relay with no -reservations path exactly the relay of every release
+// before this one.
+func (r *Reservations) persist() error {
+	if r.store == nil {
+		return nil
+	}
+	return r.store.write(r.byName)
+}
+
+// Discard removes a claim, and reports whether the store agrees.
 //
 // It is not a user-facing release and nothing outside the relay calls it: it
 // exists so a handshake that claimed a name and then failed — the registry
 // refused it as live, the public port would not bind, the announce could not be
 // written — leaves nothing behind. A name is not consumed by a connection that
 // never opened.
-func (r *Reservations) Discard(subdomain string) {
+//
+// UNLIKE Claim, a failed write does NOT roll this back. Discard exists to keep
+// that invariant now, and making it fail would leave in memory the very claim
+// it was called to remove. The caller gets the error and logs it. What that
+// asymmetry leaves behind is written down in spec/0004 §14.6 rather than left
+// to be discovered: a handshake whose Claim write succeeded and whose Discard
+// write then failed leaves a record on disk that memory does not have, and it
+// comes back at the next restart, bounded by the sweep.
+//
+// The error return was added by slice 2. A call used as a statement is
+// unaffected by it, so no frozen case moved.
+func (r *Reservations) Discard(subdomain string) error {
 	name := normaliseName(subdomain)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	held, ok := r.byName[name]
 	if !ok {
-		return
+		return nil
 	}
 	if held.TCPPort != 0 {
 		delete(r.byPort, held.TCPPort)
 	}
 	delete(r.byName, name)
+	return r.persist()
 }
 
 // PortHolder reports which name holds a public TCP port, or "" if none does.
@@ -222,6 +291,23 @@ func (r *Reservations) Get(subdomain string) (Reservation, bool) {
 	defer r.mu.RUnlock()
 	held, ok := r.byName[normaliseName(subdomain)]
 	return held, ok
+}
+
+// Snapshot returns every reservation in the set, in no particular order.
+//
+// It exists for one caller: a relay rebuilding its port pool's holds at
+// startup. A durable reservation set is the record of who owns a public port,
+// and the pool is DERIVED from it — a pool built empty beside a set that
+// survived a restart would hand a stranger the number that set says is
+// spoken for, which is half of spec/0004 §4's middle column silently missing.
+func (r *Reservations) Snapshot() []Reservation {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]Reservation, 0, len(r.byName))
+	for _, held := range r.byName {
+		out = append(out, held)
+	}
+	return out
 }
 
 // Len reports how many names are claimed.
