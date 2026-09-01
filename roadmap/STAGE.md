@@ -661,11 +661,14 @@ connection can be identified from any surface this product exposes.
   **Q-019**, open, whose named default would give first registration to the
   marketing manager and ongoing `status`/`maturity` upkeep to this seat. Until
   that resolves, this is the honest place for it.
-- **No release note for three of the four merged behaviour changes.**
-  `pumasi/releases/` at `196b749` carries one tunnel note, for `83fd9f7`.
-  Bind-before-announce, session-before-announce and ownership have all merged
-  unannounced. This seat judges a note **warranted** and it is not this seat's to
-  write — `BACKLOG.md` *Not on this list* states the judgement and the routing.
+- **One merged change may owe a release note and does not have one.**
+  `pumasi/releases/` at `196b749` carries a single tunnel note, for `83fd9f7`.
+  Under `pumasi/DECISIONS.md` **Q-034**'s default an *ordinary* merge owes
+  nothing, so `1d9505c` and `fd523e8` are not gaps; what is live is whether
+  **slice 1** is *can-hurt* under CHARTER §2.1, which it has a real argument for
+  (a bearer secret on a plaintext wire, and requests that were accepted before
+  now refused). **Neither the classification nor the note is this seat's** —
+  `BACKLOG.md` *Not on this list* states the reasoning and the routing.
 - **The local request inspector on `127.0.0.1:4040` does not exist** — `web/` is
   an empty directory, re-checked at `9e2de66`. `VALUE.md` claim 5 says so, and
   the commons catalog page already disclaims it correctly (`pumasi-web`

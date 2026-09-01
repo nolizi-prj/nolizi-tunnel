@@ -897,28 +897,42 @@ subjects.
   announce), `fd523e8` (session before announce) and slice 1 — and only the first
   of the four ever got a note.
 
-  **Warranted, and the precedent is this product's own.** The one note that
-  exists was written for a change that was merged and *undeployed*, and still is;
-  so "nobody is running it yet" is not a ground this repository has ever accepted
-  for silence. Every other product's merges this week were announced by the coder
-  that made them (`pumasi` `bff2e3d`, job `0077`). Slice 1 is the strongest case
-  of the three: it introduces a bearer secret, it changes what a `--subdomain`
-  request may be *refused*, and — item 5 — it narrows the zero-install path. A
-  reader of `pumasi/releases/` today would conclude none of that happened.
+  **The general question is already answered and it narrows this one sharply.**
+  `pumasi/DECISIONS.md` **Q-034** asks exactly this — *is a note owed for a
+  merge, and by whom* — and its named default is **no**: CHARTER §2.1 requires a
+  *published* note with a veto window for a **can-hurt** release, and *"an
+  ordinary release ends at 'release'."* The entry sits under that file's
+  `## Closed` heading. *(Its own **Status** row nevertheless still reads `open`.
+  That is a discrepancy in a file this seat may add evidence to and may not set
+  status in, so it is reported here and left. Either way the default is the one
+  recorded, and this entry does not depend on which reading is right: it asks a
+  question the default does not answer.)*
 
-  **Not this seat's to write, and the role file is the reason rather than a
-  preference.** The product-manager's *May write* list is issue labels and
-  comments, `roadmap/VALUE.md`, `roadmap/MARKET.md`, `roadmap/BACKLOG.md`,
-  `roadmap/STAGE.md`, `DECISIONS.md` questions and ops `DIGEST.md` entries.
-  `pumasi/releases/` is on none of them, and the charter flow puts release in the
-  same sequence the builder runs. **Routed to the coder in this pass's return
-  block, for all three unannounced changes rather than only the newest**, with
-  one thing the note must settle that this seat cannot: whether slice 1 is
-  *can-hurt* under CHARTER §2.1 and therefore carries a 7-day window and a
-  `DECISIONS.md` entry, as `83fd9f7`'s note did under **Q-020**. There is **no
-  `RISK_ZONES.yaml` in this repository** — `find` at `9e2de66` returns none, and
-  the only ones in the fleet are `pumasi-booking`'s — so the classification here
-  is a judgement to be argued in the note, not a lookup.
+  **So the real question is not whether the fleet owes notes; it is how slice 1
+  is classified — and this entry narrows its own earlier claim accordingly.**
+  Under Q-034's default, `1d9505c` and `fd523e8`, both merged as **ordinary**,
+  owe nothing, and describing all three as an unannounced backlog was too broad.
+  **What is left is one live question about one merge**: is slice 1 *can-hurt*?
+  There is a real argument that it is, and this seat states it without deciding
+  it — it introduces a **bearer secret on a plaintext wire**; it turns requests
+  the relay previously **accepted** into refusals (`ErrNameReserved`,
+  `ErrTokenTooShort`), including on the zero-install path that cannot present a
+  token at all (item 5); and it adds a rollback path whose **first two
+  implementations were both wrong** (`spec/0004` §11, §13). `83fd9f7` was classed
+  can-hurt and carried a note and a 7-day window under **Q-020**, which is the
+  nearest precedent in this repository.
+
+  **Not this seat's to classify and not this seat's to write.** The
+  product-manager's *May write* list is issue labels and comments,
+  `roadmap/VALUE.md`, `roadmap/MARKET.md`, `roadmap/BACKLOG.md`,
+  `roadmap/STAGE.md`, `DECISIONS.md` questions and ops `DIGEST.md` entries;
+  `pumasi/releases/` is on none of them, and CHARTER §2.1 puts the classification
+  and the note in the sequence the merging builder runs. **Routed to the coder in
+  this pass's return block, for slice 1 only.** One thing that seat should know
+  before it starts: there is **no `RISK_ZONES.yaml` in this repository** — `find`
+  at `9e2de66` returns none, and the only ones in the fleet are
+  `pumasi-booking`'s — so the classification here is a judgement to be argued in
+  the open, not a lookup.
 
 - **A second live tunnel on `pumasi.link` that this product cannot account
   for.** `GET http://pumasi.link/_pumasi/status` at 02:48 UTC 2026-09-01 reports
