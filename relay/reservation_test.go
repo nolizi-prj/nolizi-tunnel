@@ -487,3 +487,52 @@ func coreGet(r *relay.Relay, name string) (core.Tunnel, bool) {
 	t, err := r.Registry().Lookup(name + ".pumasi.link")
 	return t, err == nil
 }
+
+// C-7 · A handshake that claims a name and then fails leaves nothing behind.
+//
+// Fails when the relay never calls Discard, so a name is consumed permanently
+// by a connection that never opened. Added after the freeze on a cited spec
+// review: R-8 supplies the Discard call itself, so discardClaim could be
+// deleted from every call site and every other case would still pass
+// (SPEC.md §12).
+func TestAFailedHandshakeLeavesNoClaim(t *testing.T) {
+	low, _ := resPorts()
+
+	// Take the public port before the relay can, so the bind fails and the
+	// handshake fails after the claim has been created. The pool does no I/O
+	// and cannot know — core/portpool.go says so in its own header.
+	squatter, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", low))
+	if err != nil {
+		t.Fatalf("could not occupy the public port for this case: %v", err)
+	}
+	defer squatter.Close()
+
+	r, addr := resRelay(t, relay.Config{
+		TCPPortLow: low, TCPPortHigh: low, TCPBindHost: "127.0.0.1",
+	})
+
+	_, _, err = handshake(t, addr, core.AuthRequest{
+		Subdomain: "bindfail", Token: resOwnerToken, TCP: true, TCPPort: low,
+	})
+	if err == nil {
+		t.Fatal("the handshake succeeded, but the public port was already bound; this case needs it to fail")
+	}
+	if !strings.Contains(err.Error(), "binding public port") {
+		t.Fatalf("the handshake failed with %v, want a bind failure — this case must fail AFTER the claim", err)
+	}
+
+	// The decisive assertion: nobody owns the name. An anonymous agent gets it.
+	conn, resp, err := handshake(t, addr, core.AuthRequest{Subdomain: "bindfail"})
+	if err != nil {
+		t.Fatalf("an anonymous agent was refused a name whose only claimant never opened a tunnel: %v", err)
+	}
+	defer conn.Close()
+	if resp.Subdomain != "bindfail" {
+		t.Errorf("the anonymous agent got %q, want \"bindfail\"", resp.Subdomain)
+	}
+	if tun, err := r.Registry().Lookup("bindfail.pumasi.link"); err != nil {
+		t.Errorf("Lookup: %v", err)
+	} else if tun.Reserved {
+		t.Error("the anonymous agent's tunnel reports Reserved; the failed handshake's claim is still there")
+	}
+}

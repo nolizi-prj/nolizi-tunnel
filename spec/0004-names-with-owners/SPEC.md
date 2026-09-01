@@ -371,9 +371,15 @@ now names what ends a reservation in each slice.
 ## 10 · Evidence that each case fails for the right reason
 
 A green suite proves nothing about a defect the suite was already green
-against (L-006). So every case was run against the defect it names, by
-reinstating that defect in the built tree and running only that case. The
-mutation, the cases run, and what happened:
+against (L-006). So every case is run against a mutation that makes its own
+clause false, by reinstating that behaviour in the built tree and running only
+that case.
+
+**This section's first version said "every case" and covered only ten of
+sixteen** — no row for R-1 to R-8. `reviews/20260831-234800-spec-glm.md`
+objected that the sentence overclaimed exactly the discipline it was written to
+enforce, **and that the gap is how a second L-006 defect reached the freeze**
+(§12). The table below is the complete one.
 
 | | Defect reinstated | Cases run | Result |
 |---|---|---|---|
@@ -382,6 +388,13 @@ mutation, the cases run, and what happened:
 | **M3** | the status view has no `reserved` field — the state at `1853218` | C-4 | **RED** |
 | **M3b** | `Tunnel.Reserved` computed from the shape of the request, status field kept | C-4 | **GREEN — see below** |
 | **M4** | a short token is downgraded to anonymous instead of refused | C-6 | **RED** |
+| **M5** | `relay.discardClaim` does nothing — the relay never undoes a claim | C-7, and every other relay case | **C-7 RED, C-1..C-6 all GREEN** |
+| **MC1** | `sameToken` always true | R-1 | **RED** |
+| **MC2** | `checkToken` never refuses a short token | R-4 | **RED** |
+| **MC3** | `Claim` stores the token in the clear | R-5 | **RED** |
+| **MC4** | `Claim` ignores port conflicts | R-6, R-7 | **both RED** |
+| **MC5** | `Discard` does nothing | R-8 | **RED** |
+| **MC6** | `Check` never consults the reservation set | R-2, R-3 | **R-2 RED, R-3 GREEN** |
 
 **C-1's red run is the live defect reproduced in a test.** Its first failure
 line under M1 is `an anonymous agent asking for myapi got <nil>, want
@@ -407,3 +420,96 @@ the case actually discriminates rather than what it was hoped to.
 This also sharpens §2: the sentence to keep is not *"the field is wrong"* but
 *"a relay that only answers **is this name in use** cannot keep a promise about
 restarts."* The field was a correct answer to a question nobody asked.
+
+## 11 · A hazard found after the code review, and a test that had to be thrown away
+
+Found by re-reading `authorize`'s concurrency after `gemini` approved the
+diff — so it is recorded here rather than in a review transcript, and neither
+reviewer is being blamed for it.
+
+**The hazard.** Two connections present the **same token for the same name** at
+the same time. The first to reach `Claim` creates the reservation and carries
+`newClaim`; the second finds it already its own and carries `""`. Both then go
+on to `Register`, and whichever loses gets `ErrNameTaken` and calls
+`discardClaim`. If the loser is the one that *created* the claim, an unguarded
+discard **destroys the reservation while the winner is registered on it** — the
+winner's tunnel reports `Reserved` with nothing behind it, and its name is free
+the instant it drops. That is the defect this whole spec closes, reintroduced
+through the rollback path §5.1 asks for.
+
+**The fix** is one guard: `discardClaim` returns early if the registry still has
+the name. It is stated in §5.1's terms — a claim is undone only when nothing is
+using it.
+
+**The test written first was thrown away, and that is the part worth keeping.**
+The obvious case fires two concurrent handshakes with one token and asserts the
+reservation survives. It was built, and then run **with the guard removed**:
+**0 failures in 5 runs at 40 attempts each, and 0 failures in a single run of
+1,500 attempts.** The interleaving needs the winner of `Claim` to be preempted
+before `Register` while the other connection completes both, and two separate
+TCP dials through one accept loop do not deliver that on this host. **A case
+that cannot fail against the defect it names is not evidence of anything**
+(L-006) — it is precisely what `reviews/20260831-231109-spec-qwen.md` objected
+to in C-4, and shipping it after that objection would have been the same
+mistake with the ink still wet.
+
+What replaced it is an **in-package unit test** of the guard's own clause:
+register a tunnel on a claimed name, call `discardClaim`, assert the
+reservation is still there — then unregister and assert the same call now
+discards, so the guard is a guard and not a disablement. Measured both ways:
+**green with the guard, red without it, deterministically, in 0.00s.**
+
+**It is not a frozen acceptance case and is not numbered as one.** The frozen
+cases are this spec's contract with a reviewer; this is an implementation
+hazard in one method's rollback path, and inventing a C-7 after the freeze
+would blur which is which. It lives in `relay/discardclaim_test.go` and points
+back here.
+
+**M5 is the objection in §12, measured.** With `discardClaim`'s body emptied,
+C-7 goes red — *"an anonymous agent was refused a name whose only claimant never
+opened a tunnel"* — and **C-1 through C-6 all stay green, as do all eight
+R-cases**. Before C-7 existed, that mutation passed the entire frozen suite.
+
+**MC6 and M1 are the same shape and both matter.** R-3 stays green when `Check`
+stops consulting the set, exactly as C-3 stays green under M1: the two cases
+that guard the anonymous path must not depend on the fix, or they would be
+asserting the withdrawal §6 forbids rather than the absence of one.
+
+## 12 · Amended again, on a second cited objection — R-8 could pass with its clause false
+
+`reviews/20260831-234800-spec-glm.md` returned `VERDICT: OBJECT` citing
+`acceptance/CASES.md` **R-8**, and it was right.
+
+**The objection.** R-8's clause was *"a claim recorded by a handshake that then
+fails is discarded"* and its *Fails when* named *"a bind failure on a first
+connection"*. Both are **relay**-level: handshakes and binds live in `relay`,
+and §5.1's sentence is *"the relay calls `Discard`"*. But R-8's test is
+`core.TestADiscardedClaimLeavesNothing`, which **supplies the `Discard` call
+itself** and can only exercise the primitive's semantics. So a relay with
+`discardClaim` deleted from every call site passed R-8 green while R-8's clause
+was false in exactly the way its own column described — and no other case
+noticed, because C-1, C-2 and C-4 end in successful handshakes, C-3's claim
+succeeds, C-5 is a `Check` refusal and C-6 is refused before anything is
+created.
+
+**This is the same pattern as the C-4 objection in §9, in a spec that had just
+recorded that objection.** It is not a coincidence that it survived: §10's
+opening sentence claimed every case had been run against its own defect while
+its table covered ten of sixteen, so the one class of case that had never been
+mutated is the one that carried the defect. The evidence gap and the test gap
+are one finding seen from two sides, which is glm's phrasing and is worth
+keeping.
+
+**What changed.** **R-8 is narrowed** to `Discard`'s own semantics — remove the
+name, take its port hold with it — which is what its test actually asserts.
+**C-7 is new** and carries the relay clause: the public port is bound by
+something else before the agent arrives, so the relay claims the name,
+allocates the port and then cannot bind it; the agent is refused; and an
+*anonymous* agent afterwards is **given** that name, because nobody owns it.
+It is falsifiable and was falsified — §10, M5. And **§10's table is now
+complete**, with a mutation for all sixteen built cases.
+
+**What was not changed, and why.** The frozen cases C-1 to C-6, R-1 to R-7 and
+P-1 to P-2 are untouched; their assertions were not in question. No frozen case
+from `spec/0001`-`0003` is touched either, so **Q-030** still gets no third
+instance from this work.

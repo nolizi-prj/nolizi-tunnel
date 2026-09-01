@@ -402,8 +402,20 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, string,
 // choice is small and real and spec/0004 §5.1 states it: a transient bind
 // failure on a first connection leaves the name claimable by a stranger for as
 // long as the owner takes to retry.
+//
+// It will not pull a reservation out from under a live tunnel, and that guard
+// is load-bearing rather than defensive. Two connections presenting the SAME
+// token for the same name race: the first to Claim creates the reservation,
+// the second finds it already its own and creates nothing. Whichever loses
+// Register gets ErrNameTaken — and if that is the one that created the claim,
+// discarding here would destroy the reservation while the winner is registered
+// on it, leaving a tunnel the registry calls Reserved whose name is free the
+// moment it drops. Asking the registry first costs one RLock and closes it.
 func (r *Relay) discardClaim(subdomain string) {
 	if subdomain == "" {
+		return
+	}
+	if r.registry.Has(subdomain) {
 		return
 	}
 	if held, ok := r.reservations.Get(subdomain); ok && held.TCPPort != 0 && r.pool != nil {
