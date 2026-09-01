@@ -74,7 +74,7 @@ both, the program prints its usage and exits 2
 | :--- | :--- | :--- |
 | `--relay` | *(none — required)* | relay control address, `host:port` |
 | `--subdomain` | *(assigned)* | request a specific name; lowercase, letters/digits/inner hyphens, and not on the reserved list ([`core/subdomain.go`](core/subdomain.go)) |
-| `--token` | *(empty)* | token for a reserved subdomain — **accepted but not yet enforced**, see below |
+| `--token` | *(empty)* | claims `--subdomain` for whoever holds this token, so nobody else may use that name — **16 characters minimum**; the name is held while you are disconnected but **not across a relay restart**, see below |
 | `--host` | `127.0.0.1` | local host to forward to |
 | `--tcp` | `false` | raw TCP tunnel instead of HTTP |
 | `--tcp-port` | `0` | request this exact public port, so the address survives reconnects |
@@ -222,13 +222,27 @@ Kept in the README rather than in a footnote, because
   all. The `ssh -R` path *is* encrypted, by SSH itself. The two methods on this
   page do not have the same security properties, and this page will not pretend
   they do.
-- **A name here is free but not owned.** `AllowAll` is the only authenticator
-  the relay can run, `Tunnel.Reserved` is computed and never read, and the
-  registry and port pool are in-memory maps with no persistence. So `--token`
-  is accepted and not enforced, another anonymous client may take your name in
-  the gap between your reconnects, and **a relay restart drops every name and
-  reservation at once.** The word *permanent* is withdrawn until
-  [`roadmap/BACKLOG.md`](roadmap/BACKLOG.md) item 3 lands.
+- **A name can be owned, but only until the relay restarts.** `--token` now
+  means something: it claims a `--subdomain`, and its public `--tcp-port` with
+  it, on first use, and after that nobody without that token may have either —
+  including in the gap between your reconnects, which is where a name used to
+  be free for anyone to take
+  ([`spec/0004-names-with-owners`](spec/0004-names-with-owners/SPEC.md)). Three
+  limits, and none of them is small. **A relay restart still drops every claim
+  at once**, because the reservation set is in memory — that is slice 2 of the
+  same spec and it is not built. **A token is a bearer secret on a plaintext
+  connection**, readable by anyone on the path, until the TLS gap above is
+  closed. And **whoever claims a name first owns it**, so a stranger can still
+  take a name you have never used — trust on first use is a strict improvement
+  over *anyone, at any moment, forever*, and it is not a solution. `AllowAll` is
+  still the only authenticator the relay can run: a token narrows *which name*
+  you may have, never *whether you may connect*. The word *permanent* stays
+  withdrawn until that restart column is filled
+  ([`roadmap/BACKLOG.md`](roadmap/BACKLOG.md) item 2, *"A subdomain belongs to
+  nobody, and nothing survives a relay restart"*).
+- **The `ssh -R` path cannot hold a name.** Its username grammar has nowhere to
+  put a token, so a zero-install tunnel can be *refused* a claimed name but can
+  never claim or reclaim one. Every `ssh -R` tunnel is unreservable.
 - **The running relay is behind `main`.** Merged fixes — the announced scheme,
   and the ordering of bind-before-announce — are on `main` and have not been
   deployed. A tunnel opened against `pumasi.link` today still gets the old
