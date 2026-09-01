@@ -159,7 +159,11 @@ func (r *Relay) ServeSSH(nConn net.Conn, hostKey ssh.Signer) {
 	opts := parseSSHUser(sshConn.User())
 	session := &sshSession{conn: sshConn, closed: make(chan struct{})}
 
-	resp, tcpPort, err := r.authorize(core.AuthRequest{
+	// No Token field: the ssh username grammar cannot carry one, so this path
+	// can be *refused* a claimed name but can never claim or reclaim one
+	// (spec/0004 §8, and slice 3 is where that changes). newClaim is therefore
+	// always "" here, and is discarded rather than pretended otherwise.
+	resp, tcpPort, _, err := r.authorize(core.AuthRequest{
 		Subdomain:     opts.Subdomain,
 		TCP:           opts.TCP,
 		ClientVersion: string(sshConn.ClientVersion()),
@@ -204,7 +208,7 @@ func (r *Relay) ServeSSH(nConn net.Conn, hostKey ssh.Signer) {
 		r.mu.Lock()
 		delete(r.sessions, resp.AgentID)
 		r.mu.Unlock()
-		ports := r.releaseTCP(resp.AgentID)
+		ports := r.releaseTCP(resp.AgentID, resp.Subdomain)
 		freed := r.registry.UnregisterAgent(resp.AgentID)
 		session.Close()
 		r.log.Info("tunnel closed", "agent", resp.AgentID, "via", "ssh", "released", freed, "ports", ports)

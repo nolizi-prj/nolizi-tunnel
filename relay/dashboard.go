@@ -31,9 +31,15 @@ type tunnelView struct {
 	URL       string `json:"url"`
 	TCPAddr   string `json:"tcp_addr,omitempty"`
 	LocalPort int    `json:"local_port"`
-	// Fixed means the address was requested rather than handed out, so it
-	// survives a reconnect — the distinction a user actually acts on.
-	Fixed    bool   `json:"fixed"`
+	// Fixed means the address was asked for by name or by number rather than
+	// handed out. It says what the agent requested and nothing about who owns
+	// it — an anonymous agent can ask for a free name and get it.
+	Fixed bool `json:"fixed"`
+	// Reserved means the name belongs to a token, so it is held for its owner
+	// through a disconnect instead of being free the instant the agent drops.
+	// This is the field roadmap/BACKLOG.md item 2 found written and read
+	// nowhere; it is read here (spec/0004 §5.3).
+	Reserved bool   `json:"reserved"`
 	OpenedAt string `json:"opened_at"`
 	AgeSecs  int64  `json:"age_secs"`
 }
@@ -71,6 +77,7 @@ func (r *Relay) serveStatus(w http.ResponseWriter, _ *http.Request) {
 			URL:       r.registry.PublicURL(t.Subdomain),
 			LocalPort: t.LocalPort,
 			Fixed:     t.Requested,
+			Reserved:  t.Reserved,
 			OpenedAt:  t.OpenedAt.Format(time.RFC3339),
 			AgeSecs:   int64(now.Sub(t.OpenedAt).Seconds()),
 		}

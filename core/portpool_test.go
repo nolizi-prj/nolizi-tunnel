@@ -211,3 +211,92 @@ func TestPortPoolConcurrentAllocation(t *testing.T) {
 		t.Errorf("got %d distinct ports from %d workers", len(ports), workers)
 	}
 }
+
+// Acceptance cases P-1 and P-2 for spec/0004-names-with-owners.
+// Frozen at spec review. See spec/0004-names-with-owners/acceptance/CASES.md.
+
+// P-1 · A held port is not handed out by a generic Allocate.
+//
+// Fails when Allocate knows only inUse and the operator's reserved set, so it
+// walks onto a tenant's port the moment that tenant disconnects. That is
+// window (a) for the port, and it is the state before spec/0004.
+func TestAllocateSkipsAHeldPort(t *testing.T) {
+	// A range of exactly two, so "skipped" and "handed out" cannot be
+	// confused with "the cursor happened to be elsewhere".
+	p, err := NewPortPool(20000, 20001)
+	if err != nil {
+		t.Fatalf("NewPortPool: %v", err)
+	}
+	if err := p.Hold(20000, "sshsteward"); err != nil {
+		t.Fatalf("Hold: %v", err)
+	}
+
+	got, err := p.Allocate("stranger")
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if got == 20000 {
+		t.Fatal("Allocate handed a stranger port 20000, which is held by sshsteward")
+	}
+	if got != 20001 {
+		t.Fatalf("Allocate returned %d, want 20001 — the only unheld port", got)
+	}
+
+	// With the only other port now in use, the pool is exhausted rather than
+	// willing to fall back onto the held one.
+	if _, err := p.Allocate("stranger-2"); !errors.Is(err, ErrPortPoolExhausted) {
+		t.Errorf("a second Allocate got %v, want ErrPortPoolExhausted rather than the held port", err)
+	}
+}
+
+// P-2 · A held port is granted to its holder and refused to anyone else by
+// AllocateSpecific.
+//
+// Fails when holds are advisory: either the holder cannot reclaim its own
+// port, or a stranger naming the number gets it.
+func TestAllocateSpecificHonoursTheHolder(t *testing.T) {
+	p, err := NewPortPool(20000, 20099)
+	if err != nil {
+		t.Fatalf("NewPortPool: %v", err)
+	}
+	if err := p.Hold(20000, "sshsteward"); err != nil {
+		t.Fatalf("Hold: %v", err)
+	}
+
+	if err := p.AllocateSpecific(20000, "stranger"); err == nil {
+		t.Error("a stranger naming port 20000 was given it; a held port is its tenant's to reclaim")
+	}
+	if err := p.AllocateSpecific(20000, "sshsteward"); err != nil {
+		t.Errorf("the holder could not reclaim its own port: %v", err)
+	}
+	if got := p.Owner(20000); got != "sshsteward" {
+		t.Errorf("Owner(20000) = %q, want \"sshsteward\"", got)
+	}
+
+	// The disconnect: the allocation goes, the hold stays. That is the whole
+	// difference between an address that survives a reconnect and one that
+	// survives it by luck.
+	p.ReleaseOwner("sshsteward")
+	if got := p.Owner(20000); got != "" {
+		t.Errorf("after ReleaseOwner the port is still allocated to %q", got)
+	}
+	if got := p.Holder(20000); got != "sshsteward" {
+		t.Errorf("after ReleaseOwner the hold is %q, want it kept for \"sshsteward\"", got)
+	}
+	if err := p.AllocateSpecific(20000, "stranger"); err == nil {
+		t.Error("a stranger took port 20000 while its tenant was away — window (a), still open")
+	}
+
+	// Hold is idempotent for the same holder, and refuses a takeover.
+	if err := p.Hold(20000, "sshsteward"); err != nil {
+		t.Errorf("re-holding for the same tenant: %v", err)
+	}
+	if err := p.Hold(20000, "stranger"); err == nil {
+		t.Error("Hold let a stranger take over a held port")
+	}
+	// Unhold gives it up, and only then may anyone else have it.
+	p.Unhold(20000)
+	if err := p.AllocateSpecific(20000, "stranger"); err != nil {
+		t.Errorf("after Unhold a stranger still could not take the port: %v", err)
+	}
+}

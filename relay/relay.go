@@ -45,6 +45,12 @@ type Config struct {
 	BaseDomain string
 	// Auth decides who may connect; AllowAll when nil.
 	Auth Authenticator
+	// Reservations records which names, and which public ports, belong to
+	// which token. Nil means an empty set — not a disabled one: every name in
+	// an empty set is unclaimed, which is exactly the behaviour of a relay
+	// that had no such set at all, and the rules apply from the first claim
+	// onward (spec/0004 §5.3).
+	Reservations *core.Reservations
 	// Logger receives connection and routing events; discarded when nil.
 	Logger *slog.Logger
 	// HandshakeTimeout bounds how long a new connection may take to
@@ -81,7 +87,8 @@ type Relay struct {
 	registry *core.Registry
 	log      *slog.Logger
 
-	pool *core.PortPool // nil when this relay serves HTTP only
+	pool         *core.PortPool // nil when this relay serves HTTP only
+	reservations *core.Reservations
 
 	mu           sync.RWMutex
 	sessions     map[string]tunnelSession // agent id -> live client connection
@@ -95,6 +102,9 @@ func New(cfg Config) (*Relay, error) {
 	}
 	if cfg.Auth == nil {
 		cfg.Auth = AllowAll{}
+	}
+	if cfg.Reservations == nil {
+		cfg.Reservations = core.NewReservations()
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -117,6 +127,7 @@ func New(cfg Config) (*Relay, error) {
 		cfg:          cfg,
 		registry:     core.NewRegistry(cfg.BaseDomain, cfg.PublicScheme),
 		log:          cfg.Logger,
+		reservations: cfg.Reservations,
 		sessions:     make(map[string]tunnelSession),
 		tcpListeners: make(map[string][]*tcpListener),
 	}
@@ -159,7 +170,7 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 		return
 	}
 
-	resp, tcpPort, err := r.authorize(req)
+	resp, tcpPort, newClaim, err := r.authorize(req)
 	if err != nil {
 		r.writeFrame(conn, core.ErrorFrame(err.Error()))
 		r.log.Info("agent refused", "error", err, "peer", conn.RemoteAddr(), "requested", req.Subdomain)
@@ -182,6 +193,7 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 			// (listenTCP does that) while the registry still records it, and
 			// the next agent to ask is refused a port that is free.
 			r.registry.UnregisterAgent(resp.AgentID)
+			r.discardClaim(newClaim)
 			r.writeFrame(conn, core.ErrorFrame(err.Error()))
 			return
 		}
@@ -191,9 +203,13 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 	// a tunnel that never opened.
 	abandon := func() {
 		if listener != nil {
-			r.releaseTCP(resp.AgentID)
+			r.releaseTCP(resp.AgentID, resp.Subdomain)
 		}
 		r.registry.UnregisterAgent(resp.AgentID)
+		// A name is not consumed by a connection that never opened, so a
+		// claim this handshake created is undone with everything else it did
+		// (spec/0004 §5.1). A claim it merely *verified* is left alone.
+		r.discardClaim(newClaim)
 	}
 
 	okFrame, err := core.EncodeAuthResponse(resp)
@@ -255,7 +271,7 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 		r.mu.Lock()
 		delete(r.sessions, resp.AgentID)
 		r.mu.Unlock()
-		freedPorts := r.releaseTCP(resp.AgentID)
+		freedPorts := r.releaseTCP(resp.AgentID, resp.Subdomain)
 		freed := r.registry.UnregisterAgent(resp.AgentID)
 		session.Close()
 		r.log.Info("tunnel closed", "agent", resp.AgentID, "released", freed, "ports", freedPorts)
@@ -264,37 +280,89 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 	<-session.CloseChan()
 }
 
-// authorize validates the request, picks a name, and registers the tunnel. It
-// returns the public TCP port it allocated, or 0 for a request that asked for
-// none. That port is returned rather than looked up again from the registry
-// because the caller has to bind it before it announces the address, and a
+// authorize validates the request, decides whether this caller may have the
+// name it asked for, picks one if it asked for none, and registers the tunnel.
+//
+// It returns three things beyond the response. The public TCP port it
+// allocated, or 0 — returned rather than looked up again from the registry,
+// because the caller has to bind it before it announces the address and a
 // second route to a number the caller already holds is a place for the two to
-// disagree — which is exactly what it used to do (spec/0002, L-007).
-func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, error) {
+// disagree (spec/0002, L-007). And the subdomain whose reservation *this
+// handshake created*, or "" — so a caller whose handshake fails further on can
+// undo exactly what it did and no more (spec/0004 §5.1). A name that was
+// already claimed, or was never claimed at all, comes back as "".
+//
+// Both ingress paths run through here — ServeAgent and ServeSSH — which is why
+// the reservation rule is written once. A claim enforced on one path and not
+// the other is a claim about a two-path system that is true of one path
+// (lessons/L-009).
+func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, string, error) {
 	if err := r.cfg.Auth.Authorize(req); err != nil {
-		return core.AuthResponse{}, 0, err
+		return core.AuthResponse{}, 0, "", err
 	}
 
 	agentID, err := newAgentID()
 	if err != nil {
-		return core.AuthResponse{}, 0, fmt.Errorf("relay: could not mint an agent id: %w", err)
+		return core.AuthResponse{}, 0, "", fmt.Errorf("relay: could not mint an agent id: %w", err)
 	}
 
 	name := req.Subdomain
 	if name == "" {
 		name, err = core.AllocateSubdomain(r.registry, nil)
 		if err != nil {
-			return core.AuthResponse{}, 0, err
+			return core.AuthResponse{}, 0, "", err
 		}
 	} else if err := core.ValidateSubdomain(name); err != nil {
-		return core.AuthResponse{}, 0, err
+		return core.AuthResponse{}, 0, "", err
+	}
+
+	// Whose name is it? Only a name the caller asked for by name can be
+	// claimed or refused: a generated one is fresh, is nobody's, and asking
+	// the reservation set about it would be asking a question with one answer.
+	//
+	// A token long enough to claim with does; anything shorter takes the
+	// read-only path, where Check refuses it as too short rather than
+	// quietly treating it as no token at all. Being handed a name you believe
+	// you protected is the worse of those two failures (spec/0004 §3.1).
+	var newClaim string
+	if req.Subdomain != "" {
+		wantPort := 0
+		if req.TCP {
+			wantPort = req.TCPPort
+		}
+		if len(req.Token) >= core.MinTokenLen {
+			created, err := r.reservations.Claim(name, req.Token, wantPort)
+			if err != nil {
+				return core.AuthResponse{}, 0, "", err
+			}
+			if created {
+				newClaim = name
+			}
+		} else if err := r.reservations.Check(name, req.Token); err != nil {
+			return core.AuthResponse{}, 0, "", err
+		}
+	}
+
+	// Whatever the reservation says about a port has to reach the pool before
+	// the pool is asked for one, or a generic request could be walking onto
+	// this very number while this handshake is deciding it is spoken for.
+	held, isReserved := r.reservations.Get(name)
+	if isReserved && held.TCPPort != 0 && r.pool != nil {
+		if err := r.pool.Hold(held.TCPPort, name); err != nil {
+			r.discardClaim(newClaim)
+			return core.AuthResponse{}, 0, "", err
+		}
 	}
 
 	tunnel := core.Tunnel{
 		Subdomain: name,
 		AgentID:   agentID,
 		LocalPort: req.LocalPort,
-		Reserved:  req.Subdomain != "" && req.Token != "",
+		// Read from the record rather than guessed from the shape of the
+		// request. The old expression — a name was sent and a token was sent —
+		// could not tell a name someone owns from one they merely asked for,
+		// and nothing read it either way.
+		Reserved:  isReserved,
 		Requested: req.Subdomain != "" || req.TCPPort != 0,
 	}
 
@@ -307,9 +375,10 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, error) 
 	// A raw TCP tunnel needs its public port decided here, because the port
 	// number is the address and it has to travel back in this response.
 	if req.TCP {
-		port, err := r.allocateTCPPort(agentID, req.TCPPort)
+		port, err := r.allocateTCPPort(name, req.TCPPort)
 		if err != nil {
-			return core.AuthResponse{}, 0, err
+			r.discardClaim(newClaim)
+			return core.AuthResponse{}, 0, "", err
 		}
 		tunnel.TCPPort = port
 		resp.TCPAddr = fmt.Sprintf("%s:%d", r.cfg.PublicHost, port)
@@ -319,9 +388,28 @@ func (r *Relay) authorize(req core.AuthRequest) (core.AuthResponse, int, error) 
 		if tunnel.TCPPort != 0 {
 			r.pool.Release(tunnel.TCPPort)
 		}
-		return core.AuthResponse{}, 0, err
+		r.discardClaim(newClaim)
+		return core.AuthResponse{}, 0, "", err
 	}
-	return resp, tunnel.TCPPort, nil
+	return resp, tunnel.TCPPort, newClaim, nil
+}
+
+// discardClaim undoes a reservation that a handshake created and then failed
+// to make use of, and does nothing at all for a name this handshake merely
+// proved it already owned. Passing "" is the ordinary case and is a no-op.
+//
+// A name is not consumed by a connection that never opened. The cost of that
+// choice is small and real and spec/0004 §5.1 states it: a transient bind
+// failure on a first connection leaves the name claimable by a stranger for as
+// long as the owner takes to retry.
+func (r *Relay) discardClaim(subdomain string) {
+	if subdomain == "" {
+		return
+	}
+	if held, ok := r.reservations.Get(subdomain); ok && held.TCPPort != 0 && r.pool != nil {
+		r.pool.Unhold(held.TCPPort)
+	}
+	r.reservations.Discard(subdomain)
 }
 
 func (r *Relay) writeFrame(w io.Writer, f core.Frame) error {

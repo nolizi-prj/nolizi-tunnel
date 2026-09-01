@@ -38,17 +38,22 @@ func (t *tcpListener) stop() {
 // matters here: an agent asked for a specific port because something is
 // configured to dial it, and quietly handing back a different one would look
 // like success while nothing could reach it.
-func (r *Relay) allocateTCPPort(agentID string, requested int) (int, error) {
+//
+// The owner is the subdomain, not the agent id. An agent id is minted fresh on
+// every connection, so a pool that keyed ownership by one could never match a
+// tenant that came back — and matching a tenant that came back is the whole
+// point of a held port (spec/0004 §5.2).
+func (r *Relay) allocateTCPPort(owner string, requested int) (int, error) {
 	if r.pool == nil {
 		return 0, errors.New("relay: this relay has no TCP port range configured")
 	}
 	if requested != 0 {
-		if err := r.pool.AllocateSpecific(requested, agentID); err != nil {
+		if err := r.pool.AllocateSpecific(requested, owner); err != nil {
 			return 0, err
 		}
 		return requested, nil
 	}
-	return r.pool.Allocate(agentID)
+	return r.pool.Allocate(owner)
 }
 
 // listenTCP binds an already-allocated public port. After it returns, the
@@ -146,7 +151,12 @@ func pipe(conn net.Conn, stream net.Conn) {
 
 // releaseTCP closes every public port an agent held and returns them to the
 // pool. Called when the agent's session ends, however it ended.
-func (r *Relay) releaseTCP(agentID string) []int {
+//
+// The listeners are found by agent id — they were bound by this connection —
+// and the pool is told by subdomain, because that is what the pool keys
+// ownership on. A port claimed by a reservation stays *held* through this: the
+// tunnel is over, the address is not.
+func (r *Relay) releaseTCP(agentID, subdomain string) []int {
 	r.mu.Lock()
 	listeners := r.tcpListeners[agentID]
 	delete(r.tcpListeners, agentID)
@@ -158,7 +168,7 @@ func (r *Relay) releaseTCP(agentID string) []int {
 		freed = append(freed, l.port)
 	}
 	if r.pool != nil {
-		r.pool.ReleaseOwner(agentID)
+		r.pool.ReleaseOwner(subdomain)
 	}
 	return freed
 }
