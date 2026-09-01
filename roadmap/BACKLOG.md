@@ -5,8 +5,9 @@
 duty 5). Seeded 2026-08-30 from candidate `0011-developer-tunnels.md`; first
 evaluation pass 2026-08-31 at `3652e15`; post-release evaluation 2026-08-31 at
 `83fd9f7`; post-`0041` evaluation 2026-08-31 at `1d9505c`; post-`0047`
-evaluation 2026-08-31 at `b3d251d`; **post-`0060`/`0066` evaluation 2026-09-01
-at `87244af`**, after the session-before-announce merge and the README repair.
+evaluation 2026-08-31 at `b3d251d`; post-`0060`/`0066` evaluation 2026-09-01 at
+`87244af`; **post-`0081` evaluation 2026-09-01 at `9e2de66`**, after the
+names-with-owners merge — which delivered *half* of what was then item 2.
 
 One list, features and bugs together — a priority that cannot compare them is
 not a priority. Every entry points at its source and carries one line of
@@ -16,40 +17,104 @@ operator action rather than a build; the packet then takes the highest entry
 that *is* a build, and the operator item keeps its rank rather than being
 demoted for being unbuildable.
 
-> **Highest *build* entry: item 2** — a subdomain belongs to nobody and nothing
-> survives a relay restart. That is the next coder packet. Item 1 outranks it
-> and is **not** a build: it is operator action blocked on **Q-014**.
+> **Highest *build* entry: item 2** — *the relay-restart half: durability*,
+> `spec/0004-names-with-owners` **slice 2**. That is the next coder packet, and
+> it is the **residual** of the entry that used to stand here, not that entry:
+> slice 1, ownership, is delivered at `4489fbe` · `c12d11a` · `20e9d57` and is
+> ticked under *Delivered*. Item 1 outranks item 2 and is **not** a build: it is
+> operator action blocked on **Q-014**.
+>
+> **Three things that packet must not assume**, each measured by this seat at
+> `9e2de66` rather than argued: **(a)** that a green suite says anything about
+> the restart half — the slice-2 acceptance case **`D-1` has no Go test in this
+> tree**, and a case that does not exist is *absent*, not red; **(b)** that
+> slice 1 retires **Q-014** — `spec/0004` §4 says in as many words that *"saying
+> slice 1 retires Q-014 would be false and this spec does not say it"*; **(c)**
+> that slice 2's shape is settled — §7 names three open questions (fsync policy,
+> what a corrupt file does at boot, whether two relays may share a path) and
+> says each deserves a reviewer's objection *before* code.
 
 Reordering is a commit with the reasoning in the message; the steward vetoes by
 reverting.
 
 **This list is renumbered at every pass, so cite it by number *and* title.**
-Three citations in [`VALUE.md`](VALUE.md) pointed at the wrong entry this pass,
-and two of the three had been correct on the day they were written — a bare
-"item 9" is a pointer into an ordering this file changes on purpose. Anything
-outside this file that names an entry should name its title beside the number,
-so that a renumber breaks the number and not the meaning.
+The convention was introduced at `1853218` after three citations in
+[`VALUE.md`](VALUE.md) pointed at the wrong entry — a bare "item 9" is a pointer
+into an ordering this file changes on purpose. Anything outside this file that
+names an entry should name its title beside the number, so that a renumber
+breaks the number and not the meaning.
 
-**What changed in this pass, and why.** The previous item 2 — *the HTTP path
-hands out a URL before the session that serves it exists* — is **delivered** at
-`fd523e8` (job `0060`) and is ticked below. Everything under it moves up one.
-The blockquote at the top of this file went on naming it as the next coder
-packet for two commits after it was built, which is the whole reason this
-evaluation was queued.
+**It held, and this is the first pass in four that can say so.** All **six**
+`BACKLOG.md` citations in [`VALUE.md`](VALUE.md) and all **fifteen** in
+[`STAGE.md`](STAGE.md) were read against this file as it stood at `9e2de66`,
+*before* the re-rank below, and **every one pointed at the entry it named**.
+They are then re-pointed for the new numbering **in the same commit as the
+re-rank**, so no revision of this repository exists in which they are wrong —
+which is the failure the convention was written for, met by ordering the work
+rather than by remembering to come back.
 
-Three things follow, and the second is the one worth a future seat's attention:
+**What changed in this pass, and why.** Job `0081` built **half** of the
+previous item 2 — *a subdomain belongs to nobody, and nothing survives a relay
+restart* — across eight commits, `1853218` → `9e2de66`, **and nothing in
+`roadmap/` said so.** At `9e2de66`, `grep -n
+"9e2de66\|20e9d57\|4489fbe\|names-with-owners"` over this file,
+[`STAGE.md`](STAGE.md) and [`VALUE.md`](VALUE.md) returned **nothing at all**,
+and the blockquote above went on naming a half-delivered entry as the next coder
+packet. That is the same failure the *previous* pass was queued for, one entry
+later, and it is why this one exists. This pass splits the entry, ticks the
+delivered half, ranks the residual, and adds the one gap slice 1 opened.
 
-- **Item 1 is unchanged and keeps its rank.** It is operator action blocked on
-  **Q-014**, not a build, and this file's own convention above says an
-  unbuildable item is not demoted for being unbuildable. The highest *build*
-  entry is now item 2, the durability work, which was item 3.
-- **The fix that entry predicted does not work, and its confidence in that
-  prediction is why it was ranked as three lines.** The prediction was tested by
-  building it and it fails worse than the defect it was meant to repair. See
-  *Delivered* below; it is recorded there rather than deleted with the entry.
-- **The figures in this file and in [`STAGE.md`](STAGE.md) §2 were re-run at
-  `87244af` by this seat**, with the run count beside each. Job `0060` published
-  its own; none of them is carried here.
+| | before (`1853218`) | after (this pass, `9e2de66`) |
+|---|---|---|
+| 1 | TLS / deploy — operator action, Q-014 | **1** — unchanged rank, and its (i) gains a precondition |
+| 2 | no ownership, no persistence | **split.** Ownership → *Delivered*. **2** is the durability residual, `spec/0004` slice 2 |
+| 3 | a port the pool believes is free may not be bindable | **3** — unchanged |
+| 4 | console has no `ssh -R` | **4** — unchanged |
+| — | *(did not exist)* | **5 — new**: the zero-install ssh path can be *refused* a name and can never *hold* one |
+| 6 | PR-1 version | **6** — up one, over `agent/` tests |
+| 5 | `agent/` has no tests | **7** — down one |
+| 7 | PR-2 feedback | **8** |
+| 8 | frozen case in the ephemeral range (Q-030) | **9** |
+| 9 | BaseDomain normalisation asymmetry | **10** |
+| 10 | client TUI | **11** |
+| 11 | request inspector | **12** |
+
+Five things follow, and the second and third are the ones worth a future seat's
+attention:
+
+- **The split is the builder's, not this seat's, and it is unusually exact.**
+  `spec/0004-names-with-owners/SPEC.md` §7 names slice 1 (ownership, built) and
+  slice 2 (durability, specified and not built) and marks every row of its §4
+  table with the slice that makes it true. This seat **verified** that boundary
+  rather than re-deriving it — see item 2 and *Delivered* for what was measured
+  — and ranks on it. Nothing here re-litigates where the line was drawn.
+- **The residual is smaller than the entry it came from and buys strictly less
+  than that entry promised, and this file will not carry the old size
+  forward.** The previous item 2 was ranked as *the largest single piece of work
+  on this list*. Slice 1 was the larger half and it is gone; what is left is one
+  `Store` behind an existing type, one flag, and three open questions. **It stays
+  on top anyway**, and the reason is in item 2 rather than in this bullet.
+- **One entry is new, and it is a gap this pass's merge *opened* rather than one
+  it found.** Item 5. Before slice 1 nobody could hold a name, so the zero-install
+  `ssh -R` path lost nothing by being unable to; after slice 1 the CLI path can
+  claim a name and the ssh path still cannot — and can now be *refused* one it
+  would previously have been given. `spec/0004` §8 states it and hands it up
+  rather than leaving it to be inferred; this is the file that was supposed to
+  catch it, so it is ranked rather than footnoted.
+- **One swap, and it is the only rank change not forced by the split.** PR-1 (a
+  user-visible version) moves above *`agent/` has no tests*. Reason in both
+  entries: the undeployed set grew from **five commits touching the Go tree, of
+  which three change behaviour** to **eight, of which six change behaviour**,
+  delivering a **fourth** distinct capability the host does not have — while
+  `agent/`'s stated why-here (*"item 2 will rewrite reconnect behaviour, so the
+  tests should exist before that and not after"*) has been **overtaken**: slice 1
+  changed the reconnect path and landed without them, and slice 2 does not touch
+  reconnect at all. The gap is unchanged; the argument for its position is not.
+- **Every figure in this file and in [`STAGE.md`](STAGE.md) §2 was re-taken by
+  this seat at `9e2de66`**, with the run count beside each, and every entry
+  carries one of the two labels — **re-verified at `<sha>`** or **carried, not
+  confirmed** with the reason. Job `0081` published its own suite figures; none
+  of them is carried here.
 
 ---
 
@@ -65,22 +130,39 @@ internet. Two things are outstanding, and they are different sizes:
 
 - **(i) Deploy the merged fix.** `pumasi.link` runs a pre-`83fd9f7` binary and
   will announce `https://` until someone restarts the relay. **This is blocked
-  on `pumasi/DECISIONS.md` Q-014**, which asks who may restart a host whose one
-  live tunnel is `sshsteward` → this machine's port 22 (`RESOURCES.md` §4).
+  on `pumasi/DECISIONS.md` Q-014**, which asks who may restart a host whose live
+  tunnels include `sshsteward` → this machine's port 22 (`RESOURCES.md` §4).
   Q-014 is open and is **explicitly outside CHARTER Part 0's proceed-on-default
   rule**. Neither this seat nor a coder packet may take it, and this file does
-  not ask for it. **Re-measured read-only at 02:48 UTC 2026-09-01, no host
+  not ask for it. **Re-measured read-only at 05:51:04 UTC 2026-09-01, no host
   touched:** `http://pumasi.link/_pumasi/status` still reports
   `"url":"https://sshsteward.pumasi.link"`, `curl https://pumasi.link/` fails to
   connect on a refused 443, `http://pumasi.link/` answers `200`, and
-  `pumasi.link:2222` greets `SSH-2.0-pumasi-tunnel`. **Five commits now sit on
-  `main` that the host does not have, of which three change the relay's
-  behaviour** — `83fd9f7` (scheme), `3480990` (bind before announce) and
-  `fd523e8` (session before announce); `e40a224` and `b3d251d` touch tests and
-  specs only, so they change nothing a user of the running relay would see.
-  **And what a restart would cost has doubled since the last pass**: the status
-  read above reports `"count":2` — see *Not on this list* for the second tunnel,
-  which is not this project's and which nobody here can identify.
+  `pumasi.link:2222` greets `SSH-2.0-pumasi-tunnel`. Still `"count":2`, still
+  `"tcp_range":"20000–20099"`.
+
+  **The undeployed set grew by 60% this pass and gained a fourth capability.**
+  Counted on the same basis the previous pass used — commits touching the Go tree
+  — **eight** now sit on `main` that the host does not have, of which **six**
+  change non-test code: `83fd9f7` (scheme), `3480990` (bind before announce),
+  `fd523e8` (session before announce) and `4489fbe` + `c12d11a` + `20e9d57`
+  (ownership, one capability in three commits); `e40a224` and `b3d251d` touch
+  tests only. **Four distinct behaviour changes, up from three.** Verified this
+  pass by `git rev-list 83fd9f7~1..9e2de66` filtered on `*.go`, not carried.
+
+  **A precondition on this deploy exists now that did not before, and it is
+  `pumasi-ops`'s file rather than this repository's.**
+  `pumasi-ops/tools/pumasi-tunnel-keepalive.sh` passes **no `--token`**, so
+  after a deploy of slice 1 the steward's own `sshsteward` tunnel would be
+  *unclaimed* — it gains nothing from the change it is waiting on, and the name
+  stays takeable in the reclaim window. Adding a token is harmless against the
+  binary running today, which ignores the field. **It should land before the
+  deploy, not after**, and it is filed in this pass's return block rather than
+  reached for from here.
+
+  **And what a restart would cost is still two parties rather than one** — see
+  *Not on this list* for the second tunnel, which is not this project's and which
+  nobody here can identify.
 - **(ii) Put a wildcard certificate for `*.pumasi.link` in front of the relay
   on the Vultr host.** This is the actual TLS gap: with (i) done, every tunnel
   is *honestly* plaintext, which is still a product that no `https://`-only
@@ -93,60 +175,129 @@ Why here: it is the largest single gap between what this product is and what a
 stranger could use, it is the one item on this list every visitor to
 `pumasi.link` meets today, and it is not demoted for being unbuildable.
 
-**2 · A subdomain belongs to nobody, and nothing survives a relay restart** —
-**the next coder packet.** Source: `VALUE.md` claim 2, which sold "permanent"
-and "stable across restarts". All three facts re-verified in the tree by this
-seat at `87244af`, by grep and by reading: `Tunnel.Reserved` is written once, at
-`relay/relay.go:297` — the line has been 236, 249, 274 and is now 297; the line
-keeps moving and the fact does not — and is **never read anywhere**, the field
-being defined at `core/route.go:127` and read by nothing; `cmd/pumasi-relay`
-defines **eleven flags and none of them is an auth flag** (`grep -n auth
-cmd/pumasi-relay/main.go` finds nothing), so `AllowAll` is the only
-authenticator that binary can run; and the registry and port pool are plain
-in-memory maps (`core/route.go:145`–`:147`, `core/portpool.go:27`–`:29`, no
-persistence path anywhere in `core/` or `relay/`). A relay restart drops every
-name, every reserved port and every live tunnel at once. `--tcp-port` survives
-an *agent* reconnect, not a relay one.
+**2 · The relay-restart half — a reservation that outlives the process** —
+**the next coder packet.** Source: the **residual** of the previous item 2 (*a
+subdomain belongs to nobody, and nothing survives a relay restart*), whose first
+half is delivered — see *Delivered* — plus [`VALUE.md`](VALUE.md) claim 2, which
+after this pass still cannot say *"stable across restarts"*. The work is
+**specified in full and not built**:
+[`spec/0004-names-with-owners/SPEC.md`](../spec/0004-names-with-owners/SPEC.md)
+§7, **slice 2** — a `Store` behind the existing `core.Reservations` type, one
+JSON document written by write-to-temp-and-rename, loaded at boot,
+`-reservations <path>` on `cmd/pumasi-relay`, plus `LastSeen`, a 30-day idle
+sweep and a cap on the set's size.
 
-**Why it is now the top build entry, which is a promotion by subtraction rather
-than by argument.** It has always been the `beta` bar itself (`STAGE.md` §4) and
-what retires **Q-014** — once a restart costs nobody their address, who may
-deploy stops being a steward question and becomes an ordinary one. What changed
-is only that the entry it sat under — predicted here as a three-line reordering,
-and not one — was delivered at `fd523e8`. It is still the largest single piece of
-work on this list, and nothing in this pass made it smaller or more urgent; it is
-on top because everything cheaper above it is done or is blocked on the steward.
-**Fixer: the coder** — and the packet that takes it should expect a spec, not a
-patch: the *Delivered* entry for the previous item 2, below, is the record of
-what happens when this file guesses at an implementation.
+**What is missing — re-verified in the tree by this seat at `9e2de66`**, not
+taken from the builder's report:
 
-**One measurement that bears on it, taken this pass and not inherited.** The
-live relay is now carrying **two** tunnels rather than one (§*Not on this
-list*), and the second was opened by an agent this seat cannot identify — which
-is `AllowAll` behaving exactly as this entry describes, observed rather than
-predicted.
+- **No persistence path exists.** `grep -rn "os.WriteFile\|os.Rename\|os.Create\|encoding/json" core/ relay/` excluding
+  tests returns **two hits and neither is a store**: `relay/dashboard.go:5` and
+  `core/handshake.go:4`, both wire encoding. No file, no load-at-boot, no rename.
+- **No `LastSeen`, no expiry, no cap.** `core/reservation.go:50` carries a
+  comment saying so and naming slice 2 as where they arrive — a field deliberately
+  not shipped ahead of its reader, which is §5.1's stated discipline.
+- **No flag.** `cmd/pumasi-relay` still defines **eleven** flags and none of them
+  is `-reservations` (`grep -n "flag\." cmd/pumasi-relay/main.go`). Still no auth
+  flag either; that was never what slice 1 added, and §3 of the spec is explicit
+  that a token proves continuity and not permission.
+- **The slice-2 acceptance case does not exist in the Go tree.** `grep -rn "func
+  TestAReservationOutlivesTheRelay(" --include=*_test.go .` returns **0**, against
+  **1** for each of the other nineteen cases named in
+  [`spec/0004/acceptance/CASES.md`](../spec/0004-names-with-owners/acceptance/CASES.md).
+  This corrects one sentence written about it elsewhere: `pumasi-ops/DIGEST.md`
+  describes **D-1** as *"written and left red"*. It is written **in `CASES.md`**
+  and it is **absent from the tree** — and an absent case is not a red one. There
+  is nothing red in this suite; it passed every run this pass took
+  ([`STAGE.md`](STAGE.md) §2). `CASES.md`'s own wording is correct
+  (*"specified and not built by this packet"*), and a future seat that goes
+  looking for a failing D-1 as proof the restart half is outstanding will not
+  find one. **The proof is the missing function, and it is quoted above.**
+
+**Why it stays the top build entry — three reasons for, one honest argument
+against, and the deduction that settles it.**
+
+*For.* **(a)** It is the whole of what is left of [`STAGE.md`](STAGE.md) §4's
+fact 3 — *nothing survives a restart* — and the last of that section's three
+`beta` blockers a coder can take on their own. **(b)** It is **Q-014's own
+written retirement condition**: that entry's *What retires this entry* row names
+*"durable registry and port reservations"*, which is this slice and **not** the
+one that landed. **(c)** Q-014 blocks item 1, the largest user-facing gap on
+this list, so this is the only buildable entry on the critical path to
+unblocking it.
+
+*Against, and this file will not inherit the old size to avoid saying it.* The
+previous item 2 was ranked as *the largest single piece of work on this list*.
+**Slice 1 was the larger half, it is gone, and it took most of the user value
+with it.** Job `0081`'s finding, repeated here because this seat checked it and
+it holds: a live TCP connection cannot outlive the process at either end, so
+persistence **cannot shorten an outage** — what already bounds the outage is
+`pumasi-ops/tools/pumasi-tunnel-keepalive.sh` on a five-minute cron plus the
+agent's own 1 s → 30 s backoff. What a reconnect cannot recover is the **loss of
+the name or the port to somebody else**, and that is what *ownership* prevents.
+
+*The deduction.* **A relay restart empties an in-memory reservation set, so
+after a restart every claimed name is trust-on-first-use again for the length of
+the reclaim window** — and that window is precisely where the unrecoverable loss
+now lives. Slice 2 does not make a restart faster; it removes the one thing about
+a restart that no reconnect can undo. Everything below it on this list is either
+polish on a path that works or a diagnostic gap, so it stays on top.
+
+**One circularity worth naming, because it bounds how much comfort anyone may
+take from slice 1.** Slice 1 narrows Q-014's premise **only once deployed**, and
+deploying is what Q-014 gates. Until then the steward's route is exactly as
+exposed as it was before this merge, and — see item 1(i) — the keepalive carries
+no token, so it would not benefit even on the day of the deploy. **That is
+evidence, and this pass adds it to Q-014 as evidence. It is not a status this
+seat may set, and nothing here asks anyone to deploy.**
+
+**Fixer: the coder**, and the packet should expect a spec review *before* code.
+§7 says slice 2's three open questions — fsync policy, what a corrupt file does
+at boot, whether two relays may share one path — *"each deserve a reviewer's
+objection before code"*, and this repository holds the record of what happens
+otherwise **twice over**: the previous item 2's predicted three-line fix, which
+was wrong (*Delivered*), and slice 1's own three post-review defects (*Delivered*
+again). **What it must not assume** is in the blockquote at the top of this file.
 
 **3 · A public port the pool believes is free may not be bindable, and the
 relay gives up instead of taking the next one** — source: this evaluation,
 found while establishing why the previous order's item 2 failed. It is the
 product-side half of that port-range defect — whose test-side half is now split
-between *Delivered* (`b3d251d`) and item 8 — and it is a different defect from
-both. Re-verified in the tree at `87244af`; nothing since `0047` changed
-`core/portpool.go` or `relay/tcp.go`.
+between *Delivered* (`b3d251d`) and item 9 — and it is a different defect from
+both. **Re-verified at `9e2de66`.**
+
+**One sentence this entry carried is now false and is corrected rather than
+re-labelled.** It read *"nothing since `0047` changed `core/portpool.go` or
+`relay/tcp.go`"*. Slice 1 changed **both** — `core/portpool.go` **+66** for the
+third `held` state and `relay/tcp.go` **+20** — and the defect below is
+unchanged by either, which this seat established by reading the changed files
+rather than by assuming. `listenTCP` still hands the port back and returns an
+error (`relay/tcp.go:68`–`:75`), and `ServeAgent` still treats that as fatal to
+the handshake.
 
 `core.PortPool` is explicit that it *"does no I/O — it decides which number to
 use; binding the listener is the relay's job"* (`core/portpool.go:21–22`). So
 `Allocate` can hand back a port that the OS will refuse. When it does,
-`relay.listenTCP` releases the port and returns an error
-(`relay/tcp.go:66–70`), and `ServeAgent` treats that error as fatal to the
-handshake (`relay/relay.go:169–190`) — it unregisters the agent and refuses the
-tunnel. **It never asks the pool for the next free port**, even though the other
-99 in the range are available. Reproduced this pass: with one port of a 100-port
+`relay.listenTCP` releases the port and returns an error (`relay/tcp.go:68`,
+`:74` — re-read at `9e2de66`, moved by slice 1), and `ServeAgent` treats that
+error as fatal to the handshake (`relay/relay.go:186`–`:200`) — it unregisters
+the agent, discards any claim the handshake made, and refuses the tunnel.
+**It never asks the pool for the next free port**, even though the other 99 in
+the range are available. Reproduced this pass: with one port of a 100-port
 range held by an unrelated process, every single tunnel request was refused.
 
 There is also no guard on the operator's side: `-tcp-low` / `-tcp-high`
 (`cmd/pumasi-relay/main.go:39–40`) accept any range, including one wholly inside
 the host's ephemeral range, and neither `core.NewPortPool` nor `relay.New` warns.
+
+**Two constraints slice 1 added that the fixer must not trip over, both new
+since this entry was last written.** First, the pool's `owner` string is now the
+**subdomain** and no longer the agent id — an agent id is minted fresh per
+connection, so a hold keyed by one could never survive a reconnect
+(`spec/0004` §5.2). Second, a bind failure now also runs `discardClaim`, and
+frozen cases **C-7** and **C-9** pin what it must leave behind: a name claimed by
+a handshake that never opened must be released, *and* its pool hold with it.
+**A retry loop that walks to the next port must not discard the claim on the way
+past** — the claim is only undone when the handshake as a whole gives up.
 
 **What bounds this today, measured rather than assumed.** The running relay's
 range is **20000–20099** (`http://pumasi.link/_pumasi/status`, `"tcp_range"`,
@@ -155,7 +306,7 @@ floor. So the
 kernel cannot steal a port from the live relay, and the exposure there is only
 another process on the Vultr host binding into that block. The unbounded case
 is the operator who picks a range above 32768 with nothing to warn them, and
-the suite, whose remaining half is item 8 — *a frozen acceptance case still
+the suite, whose remaining half is item 9 — *a frozen acceptance case still
 draws its port range from inside the kernel's ephemeral range*.
 
 Why here: the failure is honest and self-healing since `1d9505c` — the agent is
@@ -172,71 +323,153 @@ command builder emits only `pumasi-tunnel --relay …` and its "First time here"
 panel offers only `git clone && go build` — so the product's headline claim, the
 one thing it does that needs nothing installed, is absent from the one page a
 visitor sees.
-Re-verified at `87244af`: `relay/dashboard.html` contains **0** occurrences of
-`ssh -R` and **1** of `git clone`, and `pumasi.link:2222` still answered
-`SSH-2.0-pumasi-tunnel` when this seat grabbed the banner at 02:48 UTC.
+**Re-verified at `9e2de66`:** `relay/dashboard.html` contains **0** occurrences
+of `ssh -R` and **1** of `git clone`, and `pumasi.link:2222` still answered
+`SSH-2.0-pumasi-tunnel` when this seat grabbed the banner at 05:51 UTC.
 Why here: it is an afternoon's work on a page that is already live, and it
 converts the strongest differentiator from a README sentence into the thing you
 can paste. `MARKET.md` §2 makes that differentiator explicit and cited, which
 raises what the omission costs.
 
-**5 · `agent/` has no tests** — source: the gate reading; L-006.
+**Read item 5 before taking this one, because the two now compound.** Putting
+`ssh -R` on the console sends more users down the one path that, since slice 1,
+can be *refused* a name and can never *hold* one. Neither entry blocks the
+other, and this one is still worth doing first — but a console that offers the
+zero-install command while saying nothing about which addresses it cannot keep
+would be selling the narrower half of the product without the caveat.
+
+**5 · The zero-install `ssh -R` path can be refused a name and can never hold
+one** — *new this pass, and it is a gap slice 1 opened rather than one it
+found.* Source: `spec/0004-names-with-owners/SPEC.md` §8, which states it and
+hands it up rather than leaving it to be inferred, and §7's **slice 3**, which
+names the shape and stops. **Re-verified in the tree at `9e2de66`:**
+`relay/sshingress.go:167`–`:171` builds its `core.AuthRequest` with
+`Subdomain`, `TCP` and `ClientVersion` and **no `Token` field**, with a comment
+saying why; and `parseSSHUser`'s `+` grammar cannot carry one, because a token is
+itself a valid subdomain and `name+token` would be read as a name.
+
+**What actually changed for a user of that path, stated as the before and the
+after rather than as a principle.** Before slice 1, nobody could hold a name, so
+an ssh client lost nothing by being unable to. After slice 1, the CLI path can
+claim a name and its public port with `--token`; the ssh path can do neither —
+and `authorize` now calls `Check` on its tokenless request, so an ssh client
+asking for a name **somebody else has claimed** is refused `ErrNameReserved`
+where it would previously have been given the name. That is **strictly more
+refusals and no new capability**, on the path this product leads with. Frozen
+case **C-5** pins the refusal and it is correct; nothing here says the behaviour
+is wrong.
+
+**Why here — fifth, above PR-1 and below the console entry.** It is the only
+entry on this list that got *worse* as a direct result of what merged this pass,
+and it lands on `VALUE.md` claim 1 and `MARKET.md` §2's cited differentiator
+rather than on an internal surface. It is **not** ranked higher, for a reason
+the spec gives and this seat agrees with: an ssh tunnel is session-scoped by
+nature — a person is sitting at a terminal holding it open — so the address it
+cannot keep is one it was less likely to need. And it is **not** merely a
+footnote, because item 4 exists: the moment the console offers the command, this
+is the experience it offers.
+
+**Fixer: the coder, after an intent statement — not straight to a packet.**
+`spec/0004` §7 is explicit that slice 3 *"needs its own intent statement, because
+both halves change what the zero-install path promises"*, and the second half —
+an operator-seeded reservation for a name nobody may claim first — is the
+operator's answer to §8's trust-on-first-use exposure and is a policy decision
+before it is code. **Do not fold this into slice 2.** They share a type and
+nothing else; slice 2 is a store, this is a grammar plus a policy.
+
+**6 · PR-1 compliance: a version that moves and is user-visible** — source:
+[`PRODUCT-RULES.md` PR-1](https://github.com/pumasi-ai/pumasi/blob/worktree-product-rules/PRODUCT-RULES.md)
+(v1.0, 2026-08-30; **binds always, from the first commit**; read fresh this pass
+and **still only on the unmerged `worktree-product-rules` branch** — **Q-017** —
+and its absence from `main` is not compliance — **re-checked this pass at
+`pumasi` `196b749`: `git ls-tree` finds it on neither `main` nor
+`origin/main`**). This product has no version anywhere: no version file, no
+`/version`, nothing in the console footer, nothing in a release note.
+**Re-verified at `9e2de66`**, with one detail that makes the fix smaller than it
+looks: **the repository root already has a `package.json`** — added so
+`pumasi/tools/gate.sh` step 1 finds a suite — and it still has **no `version`
+field**, which is exactly where PR-1 says the one source of truth belongs.
+`core.AuthRequest.ClientVersion` exists as a field (`core/handshake.go:33`) and
+the only thing that ever sets it is `relay/sshingress.go:169`, which fills it
+with the *ssh client's* version string, not this product's. (That line was
+`:165` last pass; slice 1 moved it, the fact did not.)
+**Why here, and it moved up one this pass on measured grounds rather than on a
+re-reading.** There are now **eight** merges touching the Go tree that the host
+does not have — **six** of which change non-test code, delivering a **fourth**
+distinct capability (item 1) — and **nothing on the console, in
+`/_pumasi/status` or in the logs says which build is answering**. That is
+`pumasi-booking`'s Q-012 problem arriving early, and here the answer is a few
+lines of Go plus a field already in the wire protocol.
+
+**The fifth consecutive evaluation had to infer the build from an accident, and
+this pass a second accident appeared.** Until now the only discriminator was the
+scheme in the `url` field, which separates pre-`83fd9f7` from post- and nothing
+else. Slice 1 added a `"reserved"` key to every tunnel in the status view
+(`relay/dashboard.go:42`, a plain `bool` with no `omitempty`, so it is always
+present) — and the live read at **05:51:04 UTC** carries **no `reserved` key on
+either tunnel**, which is how this seat established the host predates `4489fbe`
+without touching it. **Two accidental discriminators is not a version.** They
+came from unrelated changes, they will not appear for the next merge, and
+neither can distinguish `4489fbe` from `20e9d57` — three of this pass's six
+non-test commits are mutually invisible from outside. It moves above *`agent/`
+has no tests* because PR-1 **binds always**, the fix is small, and the entry
+below it lost the deadline that put it there.
+
+**7 · `agent/` has no tests** — source: the gate reading; L-006.
 `go test ./...` reports **no test files** for `agent`, `cmd/pumasi-relay` and
 `cmd/pumasi-tunnel`. The two `cmd` packages are argument parsing and can wait.
 `agent/` cannot: it is half of every tunnel — handshake, reconnect, local dial,
 stream fan-out — and today the only thing exercising it is `relay`'s
 end-to-end tests, which use it as a fixture and assert on the relay's behaviour,
 not its. Reconnect and local-dial-failure have no case at all.
-Re-verified at `87244af`: the three packages still report *no test files*, and
-the `-cover` runs of this pass put them at **0.0%** (`STAGE.md` §2 carries the
-figures and their run counts). Nothing in `fd523e8` added a line of `agent`
-coverage; its 468 new test lines are all in `relay/sessionorder_test.go`.
-Why here: it is the coverage the Stage 1 number does not include, and item 2 —
-the durability work — will rewrite reconnect behaviour, so the tests should
-exist before that and not after.
+**Re-verified at `9e2de66`:** the three packages still report *no test files*,
+and the `-cover` runs of this pass put them at **0.0%** ([`STAGE.md`](STAGE.md)
+§2 carries the figures and their run counts).
 
-**6 · PR-1 compliance: a version that moves and is user-visible** — source:
-[`PRODUCT-RULES.md` PR-1](https://github.com/pumasi-ai/pumasi/blob/worktree-product-rules/PRODUCT-RULES.md)
-(v1.0, 2026-08-30; **binds always, from the first commit**; read fresh this pass
-and **still only on the unmerged `worktree-product-rules` branch** — **Q-017** —
-and its absence from `main` is not compliance — **re-checked this pass:
-`git ls-tree` finds it on neither `main` nor `origin/main`**). This product has
-no version anywhere: no version file, no `/version`, nothing in the console
-footer, nothing in a release note. Re-verified at `87244af`, with one detail
-that makes the fix smaller than it looks: **the repository root already has a
-`package.json`** — added so `pumasi/tools/gate.sh` step 1 finds a suite — and it
-has **no `version` field**, which is exactly where PR-1 says the one source of
-truth belongs. `core.AuthRequest.ClientVersion` exists as a field
-(`core/handshake.go:33`) and the only thing that ever sets it is
-`relay/sshingress.go:165`, which fills it with the *ssh client's* version string,
-not this product's.
-Why here: there are now **five** merges on `main` that the host does not have —
-three of which change the relay's behaviour (item 1) — and **nothing on the
-console, in `/_pumasi/status` or in the logs says which build is answering**.
-This pass had to infer it from the scheme in a `url` field, for the fourth
-evaluation running. That is `pumasi-booking`'s Q-012 problem
-arriving early, and here the answer is a few lines of Go plus a field already in
-the wire protocol.
+**This entry's why-here has been overtaken and moves down one rather than being
+restated.** It read: *"item 2 — the durability work — will rewrite reconnect
+behaviour, so the tests should exist before that and not after."* **The
+reconnect behaviour was rewritten this pass and the tests did not exist.** Slice
+1 is precisely a change to what happens across a reconnect, it landed at
+`4489fbe`, and `agent/` gained nothing — of the **989** lines of new test in
+that merge, **0** are in `agent/` (`core/reservation_test.go` 221,
+`core/portpool_test.go` 89, `relay/reservation_test.go` 618,
+`relay/discardclaim_test.go` 61). That is the second consecutive merge to make
+the same point: `fd523e8` put all 468 of its new test lines in
+`relay/sessionorder_test.go`. **And slice 2 does not touch reconnect at all** —
+it is a store behind an existing type — so the deadline this entry set for
+itself has passed and no new one replaces it.
+Why here, now: the gap is unchanged and real — `agent/` is half of every tunnel
+and reconnect and local-dial-failure still have no case — but the *argument* for
+its position was a deadline, and the deadline is spent. It sits below item 6,
+which binds always under a rule and is a few lines, and above everything whose
+cost is smaller.
 
-**7 · PR-2 compliance: in-app feedback** — source:
+**8 · PR-2 compliance: in-app feedback** — source:
 [`PRODUCT-RULES.md` PR-2](https://github.com/pumasi-ai/pumasi/blob/worktree-product-rules/PRODUCT-RULES.md)
 (binds at the `beta` promotion; below `beta`, encouraged). Nothing in the
 product collects feedback. The reference behaviour is `pumasi-booking`'s
 (`service/src/feedback.ts`) — matched in behaviour, not copied.
+**Re-verified at `9e2de66`:** nothing in `core/`, `relay/`, `cmd/` or `web/`
+collects a report, and the console is still the routing table plus a command
+builder.
 Why here: it **gates the `beta` promotion**, so it must be built before the
 label moves, and it is worth little before items 1–2 make the thing worth
 reporting on. The natural home is the console, where a visitor already is.
+**Unchanged in rank by this pass** — it moves from 7 to 8 only because a new
+entry was inserted above it.
 
-**8 · A frozen acceptance case still draws its port range from inside the
+**9 · A frozen acceptance case still draws its port range from inside the
 kernel's ephemeral range — real, latent, and blocked on a governance reading
 rather than on work** — source: the residual half of the previous order's item
 2, which `b3d251d` did not land.
 
 `relay/scheme_test.go:314`–`:315` configures `TCPPortLow: 34500`,
-`TCPPortHigh: 34599`. This host's `/proc/sys/net/ipv4/ip_local_port_range` is
-**32768 60999**, so that block sits inside the range the kernel hands out as
-source ports for outgoing connections — the identical defect that `b3d251d`
-fixed in `relay/tcp_test.go`.
+`TCPPortHigh: 34599` — **the same two line numbers as last pass, re-read at
+`9e2de66`**. This host's `/proc/sys/net/ipv4/ip_local_port_range` is
+**32768 60999**, re-read this pass and unchanged, so that block sits inside the
+range the kernel hands out as source ports for outgoing connections — the
+identical defect that `b3d251d` fixed in `relay/tcp_test.go`.
 
 **Why it did not land with the rest.** Those two lines are inside **A-10**,
 `TestSchemeChangesNothingButTheScheme` (`relay/scheme_test.go:295`), a frozen
@@ -254,15 +487,16 @@ two ranges; all four transcripts are committed. **The reading is open and is
 escalated, not decided here** — see the digest entry for this pass and
 [`STAGE.md`](STAGE.md) §3.1.
 
-**Why it ranks eighth, below item 2 and below everything buildable.** Two
+**Why it ranks ninth, below item 2 and below everything buildable.** Two
 reasons, and the first is measured rather than argued:
 
 - **Its cost today is nothing, and this pass re-measured that rather than
   carrying `0047`'s figure.** A-10 calls `relay.New` and reads
   `Registry().PublicScheme()` back. `relay.New` passes the range to
-  `core.NewPortPool` (`relay/relay.go:124`), which is explicit that it *"does no
-  I/O"* (`core/portpool.go:21`–`:22`). **A-10 binds nothing**, and this pass
-  re-read the two constants at `87244af` to confirm they are still 34500 and
+  `core.NewPortPool` (`relay/relay.go:135`, moved from `:124` by slice 1), which
+  is explicit that it *"does no I/O"* (`core/portpool.go:21`–`:22`). **A-10 binds
+  nothing**, and this pass
+  re-read the two constants at `9e2de66` to confirm they are still 34500 and
   34599. The block stayed contended on this host through the runs recorded in
   [`STAGE.md`](STAGE.md) §2 and the suite did not notice. A latent defect that a
   contended range cannot provoke is a latent defect.
@@ -272,15 +506,25 @@ reasons, and the first is measured rather than argued:
   the first place. Ranking it above a buildable item would point the next packet
   at something that cannot be built without answering that first.
 
+**Q-030 gained a fourth instance on 2026-09-01 (`pumasi` `196b749`) and none of
+the four is this repository's newest work.** `spec/0004` amended no frozen case
+from `spec/0001`–`0003` — §12 says so and this seat confirmed it: the range
+`1853218..9e2de66` touches no test file outside `core/portpool_test.go`,
+`core/reservation_test.go`, `relay/reservation_test.go` and
+`relay/discardclaim_test.go`, all of them this spec's own. **So the count of
+instances rose and this product's exposure did not.** The reading is still open;
+[`STAGE.md`](STAGE.md) §8 carries it and nothing here closes, dates or softens
+it.
+
 Why here rather than lower: it is a real defect in a frozen file, and the day
 A-10 gains an assertion that binds — or `relay.New` gains a bind — it stops being
-latent silently. It sits beside item 9 — *`relay.New` accepts a `BaseDomain`
+latent silently. It sits beside item 10 — *`relay.New` accepts a `BaseDomain`
 that `core.NewRegistry` silently normalises differently* — the other entry on
 this list that is real, cheap and has no live consequence. **Fixer: the coder, once the reading
 resolves**; `SPEC 0002` §6.5 is the precedent on the permissive side, where the
 same builder amended a frozen fixture in the open and it stood.
 
-**9 · `relay.New` accepts a `BaseDomain` that `core.NewRegistry` silently
+**10 · `relay.New` accepts a `BaseDomain` that `core.NewRegistry` silently
 normalises differently** — source: `0041`, found while verifying SPEC 6.1 and
 deliberately left out of its scope.
 
@@ -297,30 +541,42 @@ relay's domain is correct, the failure is loud and total rather than silent and
 partial once you look at any tunnel, and the tests that would catch a regression
 already exist. It is a validation asymmetry between two constructors, worth one
 guard in `relay.New`, and it does not belong near the top of a list whose top
-two items are a lie on the internet and the `beta` bar. Re-verified at
-`87244af`: `lookupBreakingDomain` is still `relay/bindorder_test.go:56`, and
-`relay.New` still tests `cfg.BaseDomain` only for the empty string
-(`relay/relay.go:93`–`:94`).
+two items are a lie on the internet and the `beta` bar. **Re-verified at
+`9e2de66`:** `lookupBreakingDomain` is still `relay/bindorder_test.go:56`, and
+`relay.New` still tests `cfg.BaseDomain` only for the empty string — now at
+`relay/relay.go:100` rather than `:93`–`:94`, slice 1 having moved it.
+**One thing this pass adds:** `discardClaim` composes the lookup key the same
+way (`subdomain + "." + r.cfg.BaseDomain`, `relay/relay.go:429`), so an
+untrimmed `-domain` now silently defeats the rollback guard as well as every
+registry lookup. That does not change the rank — the failure is still loud and
+total the moment anyone opens a tunnel — but it is one more call site reading a
+value nothing validated.
 
-**10 · Client CLI: the interactive terminal UI** — source: the seeded item 5;
+**11 · Client CLI: the interactive terminal UI** — source: the seeded item 5;
 [`docs/ux/incumbent-ux-spec.md`](../docs/ux/incumbent-ux-spec.md) §273 for what
 the incumbents' status line shows. `cmd/pumasi-tunnel` prints logs; there is no
 live view of requests, response times or status codes, and no released binary
 for macOS or Windows.
+**Re-verified at `9e2de66`:** `cmd/pumasi-tunnel` is still flags and logs, and
+`go test ./...` still reports *no test files* for it.
 Why here: it is polish on a path that works, and every item above it is either
-something untrue or something missing that a user would rely on.
+something untrue or something missing that a user would rely on. **See also
+*Not on this list*** — a three-line change to this package's `--relay` flag was
+found unattributed in the working tree, reasoned through, and stashed rather
+than committed; if anyone wants it, it belongs here with its cost written down.
 
-**11 · Local request inspector on `127.0.0.1:4040`** — source: the seeded item
+**12 · Local request inspector on `127.0.0.1:4040`** — source: the seeded item
 6; [`VALUE.md`](VALUE.md) claim 5 (where it is marked *not built*). Re-verified
-at `87244af`: `web/` still contains **0** entries; there is no listener, no SSE,
+at `9e2de66`: `web/` still contains **0** entries; there is no listener, no SSE,
 no replay.
 Why here: last of the build items. It is a whole second product surface, and the
 honest catalog page (`pumasi-web` `843bdef`) already tells visitors it does not
 exist, so nobody is being misled while it waits.
-**Corrected this pass:** this entry said *"`MARKET.md` §2 records that all three
-incumbents ship one"*. It does not — `grep -ci inspector roadmap/MARKET.md`
-returns **0**, at every revision that file has ever had, and its §2 table carries
-five rows, none of them an inspector. The claim is sound and its source is
+**Corrected at `1853218`, and the correction is re-checked here rather than
+carried:** this entry said *"`MARKET.md` §2 records that all three incumbents
+ship one"*. It does not — `grep -ci inspector roadmap/MARKET.md`
+returns **0** at `9e2de66`, as at every revision that file has ever had, and its
+§2 table carries five rows, none of them an inspector. The claim is sound and its source is
 [`docs/ux/incumbent-ux-spec.md`](../docs/ux/incumbent-ux-spec.md): the
 comparison table at line 78 gives an Inspector row for all three, and §6.1, §6.4
 and §6.5 give one section per vendor. `VALUE.md` claim 5 carried the same wrong
@@ -335,20 +591,109 @@ That makes it a real gap, not a whim, but not ahead of anything above.
 Verified against the tree during this evaluation, not taken from commit
 subjects.
 
+- **A name and its public TCP port belong to somebody, and survive a
+  disconnect** — delivered **`4489fbe`** (the change), **`c12d11a`** and
+  **`20e9d57`** (two more defects, found *after* the code review approved), spec
+  [`spec/0004-names-with-owners`](../spec/0004-names-with-owners/SPEC.md),
+  **slice 1 of two**. This was the **first half** of item 2 of the previous
+  order. The second half — durability — is **item 2 above and is not
+  delivered**.
+
+  **Verified in the tree by this seat at `9e2de66`, by reading and by grep, and
+  not taken from the build report.**
+
+  - `core/reservation.go` is new (232 lines) and pure: `Claim` · `Check` ·
+    `Discard` · `PortHolder` · `Get` over a `map[string]Reservation` under a
+    `sync.RWMutex`, storing a hex `sha256` and never the token, compared with
+    `crypto/subtle.ConstantTimeCompare`. `MinTokenLen` is **16**
+    (`core/reservation.go:45`) and is enforced at `:102` rather than compensated
+    for by a KDF — the reasoning is `SPEC.md` §3.1 and it is conditional on that
+    constant, which the file says in as many words.
+  - **The field this entry existed to name is now read.** At `1853218`,
+    `grep -rn "\.Reserved" --include=*.go` returned **nothing at all**. At
+    `9e2de66` it returns **two non-test reads** — `relay/dashboard.go:80`, the
+    status surface, and `relay/relay.go:429`, the rollback guard — plus five in
+    `relay/reservation_test.go`. The write that kept moving (line 236, then 249,
+    274, 297) is gone: `Tunnel.Reserved` is now set from `Reservations.Get(name)`
+    rather than from the shape of the request.
+  - `core/portpool.go` gained a third state, **`held`** (`:41`), with `Hold` /
+    `Unhold` / `Holder`; `Allocate` skips a port held by another owner (`:84`)
+    and `AllocateSpecific` grants one held by its own (`:111`). The pool's
+    `owner` string is now the **subdomain** and no longer the per-connection
+    agent id — which is the only reason a hold can survive a reconnect at all.
+  - **One check, in the one place both ingress paths already share.**
+    `Relay.authorize` calls `Claim` for a request carrying a token of at least
+    `MinTokenLen` and `Check` otherwise (`relay/relay.go:333`, `:341`), and both
+    `ServeAgent` and `ServeSSH` run through it. That is
+    [L-009](https://github.com/pumasi-ai/pumasi/blob/main/lessons/L-009-two-paths-one-claim.md)'s
+    shape rather than two paths that happen to agree today.
+  - **Nineteen of the spec's twenty acceptance cases exist as Go tests. The
+    twentieth is slice 2's and does not.** Checked one function name at a time:
+    R-1..R-8, P-1..P-2 and C-1..C-9 each return **1** from `grep -rn "func
+    <name>(" --include=*_test.go .`; **`TestAReservationOutlivesTheRelay`**
+    (D-1) returns **0**. **989** lines of new test across four files, and — see
+    item 7 — **none of them in `agent/`**.
+
+  **What it does not do. Every line of this list is the spec's own text, not a
+  qualification added here.**
+
+  - **Not the restart half.** §7: *"The middle column of §4 is untouched and the
+    relay-restart half of item 2 is **not** delivered."*
+  - **Not a retirement of Q-014.** §4: *"Saying slice 1 retires Q-014 would be
+    false and this spec does not say it."* And nothing it does can reach the
+    steward's route until it is deployed, which is the act Q-014 gates — item 2's
+    closing paragraph names that circularity, and item 1(i) names the keepalive's
+    missing token.
+  - **Not a withdrawal from the anonymous case**, deliberately: `spec/0004` §6's
+    third column keeps a tokenless request working on an unclaimed name, and
+    frozen case **C-3** exists to go red if anyone ever removes that. So the
+    unattributed `skk6g7tyrs` tunnel on the live relay is **not** a defect this
+    closes — see *Not on this list*, where that sentence has been corrected.
+  - **Not reachable from the zero-install path** — item 5.
+  - **Not a defence of the token on the wire.** §3: it is a bearer secret on a
+    plaintext connection, and what bounds that is item 1(ii), not this.
+
+  **⚠ Three defects were found after a green suite *and* a clean code review,
+  and the third was introduced by the fix for the second.** `SPEC.md` §11, §12,
+  §13, and the reviews are committed. A claim could be destroyed by a race it
+  lost; **R-8** could pass while its own clause was false, because its test
+  supplied the `Discard` call the clause was about; and the guard added to fix
+  the first suppressed the rollback whenever *anything* was registered on a name,
+  so a token-holder arriving at a name an anonymous agent was already sitting on
+  left a claim behind that no tunnel ever opened. Each was **a clause whose truth
+  no execution could reach**. The transferable rule, §13, and the reason this
+  entry carries it rather than filing it away: **a guard added to protect an
+  invariant needs a case that fails when the guard is *wrong*, not only one that
+  passes when it is right.** `SPEC.md` §10's mutation table is now complete —
+  twelve mutations, every built case — and under the over-broad guard **C-8** is
+  the only case in the whole suite that reddens. That is the measurement the
+  first version of the guard did not have, and it is why a green suite is not
+  evidence here.
+
+  **What it cost, because the previous *Delivered* entry is about mis-sizing.**
+  Eight commits where the shape suggested three, five spec-review rounds, one
+  acceptance case narrowed and three added after the freeze, and one test built
+  and thrown away — the concurrency case for §11's hazard produced **0 failures
+  in 5 runs of 40 attempts and 0 in a single run of 1,500** with the guard
+  removed, so it could not fail against the defect it named. This file predicted
+  none of that, and it did not try to: the packet was told to write a spec rather
+  than a patch, and the three defects above are the argument for having done so.
+
 - **The HTTP path announces a URL only once the session that serves it exists**
   — delivered **`fd523e8`** (job `0060`), spec
   `spec/0003-session-before-announce`. This was **item 2 of the previous order**,
   and the entry at the top of this file went on naming it as the next coder
   packet for two commits afterwards.
 
-  Verified in the tree by this seat, by reading `relay/relay.go` at `87244af`:
-  the mux session is built, `r.mu` is taken, `r.sessions[resp.AgentID]` is
-  installed and the auth response is written **inside that one critical
-  section** (`:222`–`:231`), and the session is deleted again in the same section
-  if the write fails (`:232`–`:236`). `ServeHTTP` takes the same lock to read
-  `r.sessions` (`:255`–`:257`), so a visitor who arrives in what used to be the
-  window now waits for the lock instead of being answered `404 No tunnel is
-  open`. Frozen cases: `relay/sessionorder_test.go` — C-1
+  Verified in the tree at `87244af` by the seat that wrote this entry, and
+  **re-read at `9e2de66` by this one** — the line numbers moved with slice 1 and
+  the ordering did not. Reading `relay/relay.go` at `9e2de66`: the mux session is
+  built, `r.mu` is taken, `r.sessions[resp.AgentID]` is installed and the auth
+  response is written **inside that one critical section** (`:239`–`:241`), and
+  the session is deleted again in the same section if the write fails (`:245`).
+  `ServeHTTP` (`:450`) takes the same lock to read `r.sessions`, so a visitor who
+  arrives in what used to be the window now waits for the lock instead of being
+  answered `404 No tunnel is open`. Frozen cases: `relay/sessionorder_test.go` — C-1
   `TestVisitorIsNotAnsweredBeforeTheSessionExists`, C-2
   `TestTheAnnounceReachesTheAgentBeforeAnyStream`, C-3
   `TestAFailedAnnounceLeavesNothingBehind`.
@@ -363,7 +708,8 @@ subjects.
 
   The mechanism, re-read by this seat rather than taken from the build report.
   The announce is written **raw** — `r.writeFrame(conn, okFrame)`, which is a
-  plain `w.Write` at `relay/relay.go:327`–`:334` — while `mux.Session.Open`
+  plain `w.Write` at what was then `relay/relay.go:327`–`:334` and is
+  `:438`–`:445` at `9e2de66` — while `mux.Session.Open`
   writes a `FrameOpen` on **the same connection** under the session's own
   `writeMu` (`mux/session.go:88`, `:102`, `:181`). Two writers, one socket, no
   shared lock. So a visitor forwarded in the *new* window puts a stream frame on
@@ -398,7 +744,7 @@ subjects.
 
 - **The test suite's TCP harness moves below the kernel's ephemeral floor** —
   delivered **`b3d251d`**. This was the *first half* of item 2 of the previous
-  order; the second half is item 8 above and is **not** delivered.
+  order; the second half is item 9 above and is **not** delivered.
 
   Verified in the tree: `relay/tcp_test.go:40` sets `tcpHarnessBase = 21000`,
   and `tcpHarnessPorts` hands each harness a block of ten from an
@@ -428,11 +774,11 @@ subjects.
   take a figure for `relay` at all — four of its tests aborted on a port
   collision — and carried 74.7% as inherited. Re-measured here over the 100
   `-cover` runs: `core` **80.3%**, `mux` **83.5%**, `relay` **82.0%**. `agent`,
-  `cmd/pumasi-relay` and `cmd/pumasi-tunnel` remain **0.0%** — item 5.
+  `cmd/pumasi-relay` and `cmd/pumasi-tunnel` remain **0.0%** — item 7.
 
   **What this does not do:** it does not retire **Q-024** (that is the steward's,
   and `STAGE.md` §2 records the evidence without closing the window), it does not
-  fix item 8, and it is one of five merges waiting behind item 1's undeployed
+  fix item 9, and it is one of **eight** merges waiting behind item 1's undeployed
   restart — though, being test-only, it is one of the two that would change
   nothing on the host even once deployed.
 
@@ -506,11 +852,13 @@ subjects.
   `pumasi.link:20000` carries this machine's sshd (last measured at the `83fd9f7` pass; not re-measured here — this seat did not touch the live host). **Its
   announce-before-bind defect is delivered above; its bindability defect is
   item 3, and its test-range defect is delivered at `b3d251d` for
-  `tcp_test.go` with a residual at item 8.**
+  `tcp_test.go` with a residual at item 9. Its `held` state, and the ownership
+  the pool now enforces, are delivered at `4489fbe` — see the first *Delivered*
+  entry.**
 - **Seeded 5 · Client CLI, in part** — delivered `bf837ee`:
   `cmd/pumasi-tunnel` with `--relay`, `--subdomain`, `--token`, `--host`,
   `--tcp`, `--tcp-port`, `-v`, one static binary. *The interactive TUI and the
-  published macOS/Windows binaries are not delivered — item 10. The seed's
+  published macOS/Windows binaries are not delivered — item 11. The seed's
   `--http` and `--auth` do not exist: HTTP is the default and the flag is
   `--token`.*
 - **Not seeded, delivered anyway** — the relay console at the apex
@@ -524,7 +872,7 @@ subjects.
 ## Not on this list, and why
 
 - **`pumasi/catalog.json` has no entry for this product** — zero occurrences of
-  the string `tunnel`, re-checked this pass at `pumasi` `2ab3a4f`
+  the string `tunnel`, re-checked this pass at `pumasi` `196b749`
   (`grep -c tunnel catalog.json` = **0**). It is a real defect and it is recorded
   in
   [`STAGE.md`](STAGE.md) under known gaps. It is **not** a backlog item here
@@ -532,12 +880,45 @@ subjects.
   `pumasi/DECISIONS.md` **Q-019**, open. Nothing a coder packet on this product
   could build would close it.
 - **Deploying the relay** — **Q-014**, open, and outside CHARTER Part 0. Named
-  in item 1(i) as a blocker; not requested of anyone here.
+  in item 1(i) as a blocker; not requested of anyone here. **This pass added
+  evidence to that entry and set nothing**: no deployer named, no date, no
+  default read, no window touched.
 - **Merging `PRODUCT-RULES.md` to `pumasi` main** — **Q-017**, open. This pass
-  read the file fresh from the `worktree-product-rules` branch, as items 6 and 7
-  record. **Ninth consecutive evaluation to report it absent from `main`**:
-  `git ls-tree` at `pumasi` `2ab3a4f` finds it on neither `main` nor
+  read the file fresh from the `worktree-product-rules` branch (`0115758`), as
+  items 6 and 8 record. **Tenth consecutive evaluation to report it absent from
+  `main`**: `git ls-tree` at `pumasi` `196b749` finds it on neither `main` nor
   `origin/main`. Not this repository's file.
+
+- **A release note for slice 1 — this seat judges one is warranted, declines to
+  write it, and says whose it is.** `pumasi/releases/` at `196b749` carries
+  exactly **one** tunnel note, `2026-08-31-pumasi-tunnel-public-scheme.md`, for
+  `83fd9f7`. **So the gap is larger than this pass's merge**: three merged
+  behaviour changes have gone unannounced — `3480990`/`1d9505c` (bind before
+  announce), `fd523e8` (session before announce) and slice 1 — and only the first
+  of the four ever got a note.
+
+  **Warranted, and the precedent is this product's own.** The one note that
+  exists was written for a change that was merged and *undeployed*, and still is;
+  so "nobody is running it yet" is not a ground this repository has ever accepted
+  for silence. Every other product's merges this week were announced by the coder
+  that made them (`pumasi` `bff2e3d`, job `0077`). Slice 1 is the strongest case
+  of the three: it introduces a bearer secret, it changes what a `--subdomain`
+  request may be *refused*, and — item 5 — it narrows the zero-install path. A
+  reader of `pumasi/releases/` today would conclude none of that happened.
+
+  **Not this seat's to write, and the role file is the reason rather than a
+  preference.** The product-manager's *May write* list is issue labels and
+  comments, `roadmap/VALUE.md`, `roadmap/MARKET.md`, `roadmap/BACKLOG.md`,
+  `roadmap/STAGE.md`, `DECISIONS.md` questions and ops `DIGEST.md` entries.
+  `pumasi/releases/` is on none of them, and the charter flow puts release in the
+  same sequence the builder runs. **Routed to the coder in this pass's return
+  block, for all three unannounced changes rather than only the newest**, with
+  one thing the note must settle that this seat cannot: whether slice 1 is
+  *can-hurt* under CHARTER §2.1 and therefore carries a 7-day window and a
+  `DECISIONS.md` entry, as `83fd9f7`'s note did under **Q-020**. There is **no
+  `RISK_ZONES.yaml` in this repository** — `find` at `9e2de66` returns none, and
+  the only ones in the fleet are `pumasi-booking`'s — so the classification here
+  is a judgement to be argued in the note, not a lookup.
 
 - **A second live tunnel on `pumasi.link` that this product cannot account
   for.** `GET http://pumasi.link/_pumasi/status` at 02:48 UTC 2026-09-01 reports
@@ -549,29 +930,42 @@ subjects.
   59 minutes at the time of the read. **This seat did not establish who opened
   it and will not guess.** It is recorded because three things follow and none of
   them is a build: it is the first traffic on this relay that is not the
-  steward's own ssh route; it is `AllowAll` working as item 2 describes, since
-  an anonymous agent taking a free name is precisely what that entry says the
-  relay cannot refuse; and it **doubles what a restart costs**, which is the
-  fact **Q-014** turns on and whose text still says the live set is *"exactly
-  one"*. Nothing was done to the host, the tunnel or the entry.
+  steward's own ssh route; it is `AllowAll` doing exactly what it is specified
+  to do, since **an anonymous agent taking a free name is not something slice 1
+  changed and was never meant to be** (`spec/0004` §6, third column, and frozen
+  case **C-3**, which exists to fail if anyone ever withdraws it); and it
+  **doubles what a restart costs**, which is the fact **Q-014** turns on and
+  whose text still says the live set is *"exactly one"*. Nothing was done to the
+  host, the tunnel or the entry.
 
-- **The uncommitted change to `cmd/pumasi-tunnel/main.go` that was in the
-  working tree when this evaluation started, and still is.** `git diff --stat`
-  reports `cmd/pumasi-tunnel/main.go | 6 +++---` — three hunks that make
-  `--relay` **default to `pumasi.link:7000`** instead of being required, drop
-  `--relay` from the usage string, and delete the `*relayAddr == ""` arm of the
-  argument check. **No job claims it**: nothing in `pumasi-ops/jobs/done/`
-  names it and `git log -3 -- cmd/pumasi-tunnel/main.go` ends at `a5b77fc`, well
-  before any candidate. **This seat did not commit it, revert it, check it out
-  or stash it**, and `git diff --stat` still reports it unchanged after this
-  commit; the staging here was by path.
+  **Re-read at 05:51:04 UTC 2026-09-01, no host touched, and both are still
+  there**: `sshsteward` `"age_secs":84771` — **23 h 32 m** unbroken, the same
+  connection as at the last three passes — and `skk6g7tyrs` `"age_secs":14561`,
+  **4 h 02 m**, the same `"opened_at":"2026-09-01T01:48:23Z"` as before, so it is
+  one connection persisting rather than a series of new ones. Still
+  unattributed, and this seat still does not guess.
 
-  **It contradicts the file the commit before this one repaired.**
-  [`README.md`](../README.md) line 69 says `--relay` is **required**, line 75
-  tabulates its default as *(none — required)*, and all four invocations at
-  lines 59–66 pass it explicitly. `87244af`'s subject is *"the front door stops
-  contradicting the source tree"*; this diff would make the front door wrong
-  again, in the same place, one commit later.
+- **The unattributed change to `cmd/pumasi-tunnel/main.go` — now stashed, and
+  still not ranked.** Three hunks making `--relay` **default to
+  `pumasi.link:7000`** instead of being required, dropping `--relay` from the
+  usage string, and deleting the `*relayAddr == ""` arm of the argument check.
+  **No job ever claimed it.** Job `0081` read the reasoning below, agreed with
+  it, and **`git stash`ed the diff with a message naming why** rather than
+  committing or discarding it — verified by this seat at `9e2de66`:
+  `git stash list` carries one entry, `git stash show --stat stash@{0}` reports
+  `cmd/pumasi-tunnel/main.go | 6 +++---`, and the working tree is clean. **That
+  was the right call and this entry keeps its reasoning**, because a stash is
+  recoverable and a decision is not:
+
+  **It contradicts the file this repository has now repaired twice.**
+  Re-read at `9e2de66`: [`README.md`](../README.md) line 69 says `--relay` is
+  **required**, line 75 tabulates its default as *(none — required)*, and all
+  four invocations at lines 59–66 pass it explicitly — the same six lines as
+  last pass, unmoved by `3626562`'s token paragraphs. `87244af`'s subject is
+  *"the front door stops contradicting the source tree"* and `3626562`'s is
+  *"the front door says what a token now does, and what it still cannot do"*;
+  this diff would make the front door wrong again, in the same place, for the
+  third time.
 
   **It is not ranked as a build, and the reason is not that it is small.** The
   ergonomics gain is narrow: the zero-install path this product leads with is
@@ -579,8 +973,10 @@ subjects.
   only shortens a command for someone who has already cloned and built. Against
   that, omitting a required flag today prints usage and exits 2, whereas with
   this diff `./pumasi-tunnel 8080` **publishes a local port to a relay the user
-  never named** — a relay that runs `AllowAll` and serves plaintext (items 1 and
-  2). Turning a usage error into an unrequested publication is a change to what
+  never named** — a relay that runs `AllowAll` and serves plaintext (item 1, and
+  slice 1 does not change that: `spec/0004` §3 is explicit that a token proves
+  continuity, not permission, and `AllowAll` still answers *may this agent use
+  this relay* with yes). Turning a usage error into an unrequested publication is a change to what
   the product promises; it needs an intent statement and a window, not a
   working-tree edit, and if it is taken it moves README lines 69 and 75 in the
   same commit. **A seat that disagrees should rank it in the order above with
