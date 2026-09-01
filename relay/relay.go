@@ -202,18 +202,41 @@ func (r *Relay) ServeAgent(conn net.Conn) {
 		abandon()
 		return
 	}
-	if err := r.writeFrame(conn, okFrame); err != nil {
+	// Install the session before the announce, and announce while holding the
+	// lock that guards it. The URL in this frame is live the moment the agent
+	// reads it, so the thing that serves the URL has to be in place first
+	// (spec/0003) — the same rule as the bind above, for the thing that
+	// answers an HTTP hostname.
+	//
+	// r.mu is doing two jobs here, and the second is the reason the write is
+	// inside it rather than after it. ServeHTTP takes this lock to read
+	// r.sessions, so a visitor arriving now waits for the lock instead of
+	// being told there is no tunnel — and, because it cannot reach OpenStream
+	// without first holding the session, no stream frame can reach the wire
+	// ahead of this frame. The agent is in DecodeFrame waiting for exactly
+	// one frame and would decode a stream open as its auth response.
+	//
+	// The write is bounded: the handshake deadline set above is still armed
+	// and is cleared only after this, so an agent that never reads costs at
+	// most HandshakeTimeout rather than the routing table.
+	session := muxSession{s: mux.Server(conn)}
+	r.mu.Lock()
+	r.sessions[resp.AgentID] = session
+	err = r.writeFrame(conn, okFrame)
+	if err != nil {
+		// Undone in the same critical section: between two of them a visitor
+		// would be handed a stream on a connection already known to be dead.
+		delete(r.sessions, resp.AgentID)
+	}
+	r.mu.Unlock()
+	if err != nil {
+		session.Close()
 		abandon()
 		return
 	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
 		r.log.Warn("could not clear handshake deadline", "error", err)
 	}
-
-	session := muxSession{s: mux.Server(conn)}
-	r.mu.Lock()
-	r.sessions[resp.AgentID] = session
-	r.mu.Unlock()
 
 	// The socket has been answering since before the announce; start draining
 	// it now that there is a session to forward into. A visitor that arrived
@@ -338,8 +361,13 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	session := r.sessions[tunnel.AgentID]
 	r.mu.RUnlock()
 	if session == nil {
-		// The registry and the session map disagreed: the agent went away
-		// between the lookup and here.
+		// Teardown, and only teardown: the agent's connection ended between
+		// the lookup above and here, and ServeAgent has removed the session
+		// but not yet unregistered the route. The other direction — a URL
+		// announced before its session existed — is closed by ServeAgent
+		// installing the session and writing the auth response under this
+		// same lock (spec/0003 §1), so a visitor that beats the announce
+		// waits for it here rather than arriving in this branch.
 		r.notFound(w, req, fmt.Errorf("tunnel %q has no live session", tunnel.Subdomain))
 		return
 	}
