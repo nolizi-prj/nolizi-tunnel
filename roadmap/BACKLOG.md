@@ -1,5 +1,20 @@
 # BACKLOG — what gets built next, in order
 
+## Steward priority — in-app feedback is the next new build
+
+**Directed 2026-09-01.** The steward reaffirmed that Pumasi Tunnel should have
+the feedback feature previously requested and accepted the PR-2 shape. Treat
+the feedback entry currently numbered 8 as the highest **new capability**
+packet, ahead of versioning, inspector, TUI, and other feature work. The
+already-delivered reservation slice's outstanding cross-family review remains
+recovery/closure work and may finish independently; it is not a reason to
+start a different feature first.
+
+The feature may merge before transport TLS, but it must not deploy with an
+optional contact field over plaintext HTTP. It must never expose a GitHub
+credential to the browser, and no release claim may call the merged form live
+until the relay is deployed and a sanitized test issue is verified.
+
 **Owned by the product-manager role**
 ([`pumasi-ops/roles/product-manager.md`](https://github.com/pumasi-ai/pumasi-ops/blob/main/roles/product-manager.md),
 duty 5). Seeded 2026-08-30 from candidate `0011-developer-tunnels.md`; first
