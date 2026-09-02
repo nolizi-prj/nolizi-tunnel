@@ -233,17 +233,11 @@
   </section>
 
   <section>
-    <h2>Open tunnels <span class="sub" id="count"></span></h2>
-    <div id="table-area" class="scroll"></div>
-  </section>
-
-  <section>
     <h2>This relay</h2>
     <div class="facts">
       <div><b id="f-domain">—</b> base domain</div>
       <div><b id="f-agent">—</b> agent port</div>
       <div><b id="f-tcp">—</b> public TCP range</div>
-      <div><b id="f-count">—</b> tunnels open</div>
     </div>
   </section>
 
@@ -328,10 +322,6 @@
     var kindEl = document.querySelector('input[name=kind][value="' + preset[1] + '"]');
     if (kindEl) kindEl.checked = true;
   });
-  portEl.addEventListener("input", function () {
-    serviceEl.value = "custom";
-  });
-
   // Names are lowercased here rather than by the relay: a person who types
   // "MyApi" should see what will actually be requested, not discover the
   // difference afterwards.
@@ -341,6 +331,8 @@
 
   function build() {
     var tcp = kind() === "tcp";
+    var presetValue = portEl.value + ":" + kind();
+    serviceEl.value = serviceEl.querySelector('option[value="' + presetValue + '"]') ? presetValue : "custom";
     var client = method() === "client";
     document.getElementById("client-install-step").hidden = !client;
     document.getElementById("local-step-number").textContent = client ? "3" : "2";
@@ -420,47 +412,10 @@
     }
   }
 
-  function ago(secs) {
-    if (secs < 60) return secs + "s";
-    if (secs < 3600) return Math.floor(secs / 60) + "m";
-    if (secs < 86400) return Math.floor(secs / 3600) + "h";
-    return Math.floor(secs / 86400) + "d";
-  }
-
   function escapeHTML(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
-  }
-
-  function renderTable(data) {
-    var area = document.getElementById("table-area");
-    var tunnels = data.tunnels || [];
-
-    if (!tunnels.length) {
-      area.innerHTML =
-        '<div class="empty"><p>No tunnels are open.</p>' +
-        '<p class="sub">Run the command above on the machine you want to reach — ' +
-        'a tunnel appears here the moment it connects.</p></div>';
-      return;
-    }
-
-    var rows = tunnels.map(function (t) {
-      var address = t.tcp_addr
-        ? '<span class="mono">' + escapeHTML(t.tcp_addr) + "</span>" +
-          '<div class="sub">raw TCP</div>'
-        : '<a href="' + escapeHTML(t.url) + '" rel="noopener">' +
-          escapeHTML(t.subdomain + "." + data.base_domain) + "</a>" +
-          '<div class="sub">HTTP</div>';
-      return "<tr><td>" + address + "</td>" +
-        '<td class="mono">' + (t.local_port ? ":" + t.local_port : "—") + "</td>" +
-        "<td>" + ago(t.age_secs) + '<div class="sub">' + escapeHTML((t.opened_at || "").replace("T", " ").replace("Z", " UTC")) + "</div></td>" +
-        "<td>" + '<span class="pill">' + (t.fixed ? "fixed address" : "assigned") + "</span></td></tr>";
-    }).join("");
-
-    area.innerHTML =
-      "<table><thead><tr><th>Public address</th><th>Local</th><th>Open for</th><th></th></tr></thead>" +
-      "<tbody>" + rows + "</tbody></table>";
   }
 
   function poll() {
@@ -474,11 +429,8 @@
         document.getElementById("f-domain").textContent = data.base_domain || "—";
         document.getElementById("f-agent").textContent = state.agentPort;
         document.getElementById("f-tcp").textContent = data.tcp_range || "disabled";
-        document.getElementById("f-count").textContent = data.count;
-        document.getElementById("count").textContent = data.count ? "(" + data.count + ")" : "";
         document.getElementById("live-badge").textContent = "relay live";
         document.getElementById("live-badge").style.opacity = "1";
-        renderTable(data);
         build();
       })
       .catch(function () {

@@ -39,7 +39,7 @@ func TestApexServesConsoleAndTunnelsStillRoute(t *testing.T) {
 	}
 }
 
-func TestStatusEndpointListsOpenTunnels(t *testing.T) {
+func TestPublicStatusDoesNotListOpenTunnels(t *testing.T) {
 	h := newHarness(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
 	req, _ := http.NewRequest(http.MethodGet, h.edge.URL+"/_pumasi/status", nil)
@@ -50,26 +50,17 @@ func TestStatusEndpointListsOpenTunnels(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var got struct {
-		BaseDomain string `json:"base_domain"`
-		Count      int    `json:"count"`
-		Tunnels    []struct {
-			Subdomain string `json:"subdomain"`
-			URL       string `json:"url"`
-			LocalPort int    `json:"local_port"`
-		} `json:"tunnels"`
-	}
+	var got map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatalf("decoding status: %v", err)
 	}
-	if got.BaseDomain != "pumasi.link" || got.Count != 1 {
-		t.Fatalf("status = %+v, want one tunnel on pumasi.link", got)
+	if got["base_domain"] != "pumasi.link" {
+		t.Fatalf("status = %+v, want relay configuration", got)
 	}
-	if got.Tunnels[0].Subdomain != h.subdomain {
-		t.Errorf("subdomain = %q, want %q", got.Tunnels[0].Subdomain, h.subdomain)
-	}
-	if got.Tunnels[0].LocalPort == 0 {
-		t.Error("local port missing from status")
+	for _, private := range []string{"count", "tunnels", "subdomain", "local_port", "tcp_addr", "opened_at"} {
+		if _, exists := got[private]; exists {
+			t.Errorf("public status exposes %q: %+v", private, got)
+		}
 	}
 }
 
@@ -159,6 +150,9 @@ func TestConsoleOffersZeroInstallSSHAndFeedback(t *testing.T) {
 	}
 	if strings.Contains(body, "Install the Pumasi client <span") {
 		t.Error("console still contains the redundant standalone install card")
+	}
+	if strings.Contains(body, "Open tunnels") {
+		t.Error("console exposes the public tunnel directory")
 	}
 
 	statusReq := httptest.NewRequest(http.MethodGet, "https://pumasi.link/_pumasi/status", nil)

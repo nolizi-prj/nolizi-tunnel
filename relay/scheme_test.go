@@ -2,7 +2,6 @@ package relay_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -116,40 +115,6 @@ func newSchemeHarness(t *testing.T, scheme string) *schemeHarness {
 	}
 }
 
-// consoleURL is what the console shows: the url field of the status feed the
-// page polls, for this harness's tunnel.
-func (h *schemeHarness) consoleURL(t *testing.T) string {
-	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, h.edge.URL+"/_pumasi/status", nil)
-	req.Host = "pumasi.link"
-	resp, err := h.edge.Client().Do(req)
-	if err != nil {
-		t.Fatalf("status request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var got struct {
-		Tunnels []struct {
-			Subdomain string `json:"subdomain"`
-			URL       string `json:"url"`
-			TCPAddr   string `json:"tcp_addr"`
-		} `json:"tunnels"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
-		t.Fatalf("decoding status: %v", err)
-	}
-	for _, tn := range got.Tunnels {
-		if tn.Subdomain == h.subdomain {
-			if tn.TCPAddr != "" {
-				t.Errorf("an http tunnel reported a tcp address %q", tn.TCPAddr)
-			}
-			return tn.URL
-		}
-	}
-	t.Fatalf("tunnel %q missing from the status feed", h.subdomain)
-	return ""
-}
-
 // sshTunnelName is the ssh client's username, which the ingress reads as the
 // requested subdomain — so the ssh session's tunnel is a different one from
 // the agent's, registered in the same registry.
@@ -216,19 +181,6 @@ func TestAuthResponseCarriesTheRelayScheme(t *testing.T) {
 	}
 }
 
-// A-6 · Surface 2: the console at the relay's apex.
-func TestConsoleReportsTheRelayScheme(t *testing.T) {
-	h := newSchemeHarness(t, "")
-	if got, want := h.consoleURL(t), "http://"+h.subdomain+".pumasi.link"; got != want {
-		t.Errorf("default console url = %q, want %q", got, want)
-	}
-
-	hs := newSchemeHarness(t, core.SchemeHTTPS)
-	if got, want := hs.consoleURL(t), "https://"+hs.subdomain+".pumasi.link"; got != want {
-		t.Errorf("https console url = %q, want %q", got, want)
-	}
-}
-
 // A-7 · Surface 3: the zero-install ssh banner, read off a real ssh client.
 func TestSSHBannerCarriesTheRelayScheme(t *testing.T) {
 	h := newSchemeHarness(t, "")
@@ -247,7 +199,7 @@ func TestSSHBannerCarriesTheRelayScheme(t *testing.T) {
 	}
 }
 
-// A-8 · The case a future copy-paste breaks: for one relay, all three
+// A-8 · The case a future copy-paste breaks: for one relay, both address
 // surfaces agree with each other and with the registry that decided it. A
 // surface that grows its own scheme fails here however it is spelled.
 func TestAllThreeSurfacesAgreeOnTheScheme(t *testing.T) {
@@ -257,9 +209,6 @@ func TestAllThreeSurfacesAgreeOnTheScheme(t *testing.T) {
 
 		if h.authURL != decided {
 			t.Errorf("scheme %q: agent was told %q, registry decided %q", scheme, h.authURL, decided)
-		}
-		if got := h.consoleURL(t); got != decided {
-			t.Errorf("scheme %q: console shows %q, registry decided %q", scheme, got, decided)
 		}
 		// The ssh session asks for its own name, so the address it is greeted
 		// with is the registry's decision for that name — same registry, same

@@ -557,7 +557,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		case "/healthz":
 			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": Version})
 		case "/readyz":
-			writeJSON(w, http.StatusOK, map[string]any{"status": "ready", "version": Version, "tunnels": r.registry.Len()})
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ready", "version": Version})
 		case "/_pumasi/feedback":
 			r.serveFeedback(w, req)
 		case "/install.sh":

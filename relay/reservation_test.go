@@ -1,7 +1,6 @@
 package relay_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -285,8 +284,8 @@ func TestTheAnonymousCaseStillWorks(t *testing.T) {
 	}
 }
 
-// C-4 · The routing table carries who owns a name, and the status surface
-// reports it.
+// C-4 · The routing table carries who owns a name, while the public status
+// surface does not disclose that ownership.
 //
 // Fails when Tunnel.Reserved is computed from the shape of the request —
 // req.Subdomain != "" && req.Token != "" — which cannot tell a claimed name
@@ -295,7 +294,7 @@ func TestTheAnonymousCaseStillWorks(t *testing.T) {
 //
 // Narrowed from its first version on a cited spec-review objection; SPEC.md §9
 // says why the other half is a review check and not a case.
-func TestTheStatusSurfaceReportsWhoOwnsAName(t *testing.T) {
+func TestOwnershipStaysInTheRoutingTable(t *testing.T) {
 	r, addr := resRelay(t, relay.Config{})
 
 	owned, _, err := handshake(t, addr, core.AuthRequest{Subdomain: "myapi", Token: resOwnerToken})
@@ -331,7 +330,7 @@ func TestTheStatusSurfaceReportsWhoOwnsAName(t *testing.T) {
 		t.Error("a name asked for by name is not marked Requested; Reserved and Requested are not synonyms")
 	}
 
-	// And the status surface agrees with it, for both.
+	// Ownership is routing state, not a public directory.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/_pumasi/status", nil)
 	req.Host = "pumasi.link"
@@ -339,24 +338,10 @@ func TestTheStatusSurfaceReportsWhoOwnsAName(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status returned %d", rec.Code)
 	}
-	var status struct {
-		Tunnels []struct {
-			Subdomain string `json:"subdomain"`
-			Reserved  bool   `json:"reserved"`
-		} `json:"tunnels"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
-		t.Fatalf("decoding status: %v", err)
-	}
-	seen := map[string]bool{}
-	for _, v := range status.Tunnels {
-		seen[v.Subdomain] = v.Reserved
-	}
-	if got, ok := seen["myapi"]; !ok || !got {
-		t.Errorf("the status surface reports myapi as reserved=%v (present=%v), want true", got, ok)
-	}
-	if got, ok := seen["other"]; !ok || got {
-		t.Errorf("the status surface reports other as reserved=%v (present=%v), want false", got, ok)
+	for _, private := range []string{"myapi", "other", "reserved", "tunnels"} {
+		if strings.Contains(rec.Body.String(), private) {
+			t.Errorf("public status exposes %q: %s", private, rec.Body.String())
+		}
 	}
 }
 

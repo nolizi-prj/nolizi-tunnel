@@ -1,7 +1,7 @@
 # Pumasi Tunnel stage
 
 **Stage:** Alpha<br>
-**Release:** `0.1.6`<br>
+**Release:** `0.1.7`<br>
 **Verified:** 2026-09-02 on `https://pumasi.link`
 
 Phase 1 is complete. This is still Alpha because there are no external
