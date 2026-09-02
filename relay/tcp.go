@@ -101,18 +101,27 @@ func (r *Relay) serveTCP(session tunnelSession, listener *tcpListener, subdomain
 			}
 			return
 		}
+		if !r.acquireVisitor(listener.agentID) {
+			r.log.Warn("tcp visitor limit reached", "port", listener.port, "from", conn.RemoteAddr())
+			conn.Close()
+			continue
+		}
 
 		stream, err := session.OpenStream(true)
 		if err != nil {
 			// The agent is gone; refuse this visitor rather than hold it open.
 			conn.Close()
+			r.releaseVisitor(listener.agentID)
 			r.log.Info("tcp visitor refused, agent is gone",
 				"port", listener.port, "subdomain", subdomain, "error", err)
 			return
 		}
 
 		r.log.Debug("tcp connection", "port", listener.port, "from", conn.RemoteAddr())
-		go pipe(conn, stream)
+		go func() {
+			defer r.releaseVisitor(listener.agentID)
+			pipe(conn, stream)
+		}()
 	}
 }
 

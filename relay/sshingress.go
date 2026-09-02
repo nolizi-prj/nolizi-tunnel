@@ -139,6 +139,11 @@ func parseSSHUser(user string) sshOptions {
 // ServeSSH runs one incoming ssh connection as a tunnel. Callers run it per
 // accepted connection, as with ServeAgent.
 func (r *Relay) ServeSSH(nConn net.Conn, hostKey ssh.Signer) {
+	releaseSource, ok := r.beginTunnel(nConn)
+	if !ok {
+		return
+	}
+	defer releaseSource()
 	cfg := &ssh.ServerConfig{
 		// Anonymous by design: the product's promise is a working tunnel from
 		// one command with no account. A relay that wants identity supplies an

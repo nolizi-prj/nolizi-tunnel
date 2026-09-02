@@ -65,6 +65,13 @@ type Config struct {
 	// authenticate, so an idle or hostile dialler cannot hold a slot open
 	// forever. Defaults to 10s.
 	HandshakeTimeout time.Duration
+	// MaxTunnelsPerIP and TunnelStartsPerMinute bound anonymous tunnel
+	// creation by source address. Zero selects conservative public defaults.
+	MaxTunnelsPerIP       int
+	TunnelStartsPerMinute int
+	// MaxConnectionsPerTunnel bounds simultaneous visitor streams so one
+	// public endpoint cannot consume every relay file descriptor.
+	MaxConnectionsPerTunnel int
 
 	// TCPPortLow and TCPPortHigh bound the public ports handed to raw TCP
 	// tunnels (SSH, RDP, databases). Leave both zero to refuse TCP tunnels
@@ -114,6 +121,8 @@ type Relay struct {
 	mu               sync.RWMutex
 	sessions         map[string]tunnelSession // agent id -> live client connection
 	tcpListeners     map[string][]*tcpListener
+	visitorCounts    map[string]int
+	abuse            *tunnelAbuseGuard
 	feedbackMu       sync.Mutex
 	feedbackAttempts map[string][]time.Time
 }
@@ -139,6 +148,18 @@ func New(cfg Config) (*Relay, error) {
 	}
 	if cfg.HandshakeTimeout == 0 {
 		cfg.HandshakeTimeout = 10 * time.Second
+	}
+	if cfg.MaxTunnelsPerIP == 0 {
+		cfg.MaxTunnelsPerIP = 20
+	}
+	if cfg.TunnelStartsPerMinute == 0 {
+		cfg.TunnelStartsPerMinute = 60
+	}
+	if cfg.MaxConnectionsPerTunnel == 0 {
+		cfg.MaxConnectionsPerTunnel = 64
+	}
+	if cfg.MaxTunnelsPerIP < 1 || cfg.TunnelStartsPerMinute < 1 || cfg.MaxConnectionsPerTunnel < 1 {
+		return nil, fmt.Errorf("relay: abuse limits must be positive")
 	}
 	if cfg.PublicHost == "" {
 		cfg.PublicHost = cfg.BaseDomain
@@ -216,6 +237,8 @@ func New(cfg Config) (*Relay, error) {
 		ownReservations:  own,
 		sessions:         make(map[string]tunnelSession),
 		tcpListeners:     make(map[string][]*tcpListener),
+		visitorCounts:    make(map[string]int),
+		abuse:            newTunnelAbuseGuard(cfg.MaxTunnelsPerIP, cfg.TunnelStartsPerMinute, time.Minute),
 		feedbackAttempts: make(map[string][]time.Time),
 	}, nil
 }
@@ -239,6 +262,11 @@ func (r *Relay) Close() error {
 // connection.
 func (r *Relay) ServeAgent(conn net.Conn) {
 	defer conn.Close()
+	releaseSource, ok := r.beginTunnel(conn)
+	if !ok {
+		return
+	}
+	defer releaseSource()
 
 	// The handshake happens on the raw connection, before the multiplexer, so
 	// an unauthenticated peer never gets a stream. The deadline is cleared
@@ -592,6 +620,12 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.notFound(w, req, fmt.Errorf("tunnel %q has no live session", tunnel.Subdomain))
 		return
 	}
+	if !r.acquireVisitor(tunnel.AgentID) {
+		r.log.Warn("http visitor limit reached", "subdomain", tunnel.Subdomain)
+		http.Error(w, "tunnel connection limit reached", http.StatusTooManyRequests)
+		return
+	}
+	defer r.releaseVisitor(tunnel.AgentID)
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {

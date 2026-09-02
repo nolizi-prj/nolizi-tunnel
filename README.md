@@ -4,7 +4,7 @@ Publish localhost through one outbound connection. Pumasi Tunnel supports
 HTTPS applications and raw TCP, using either stock `ssh` or one static Go
 client. No account or session timer is required. Apache-2.0.
 
-Live relay: [pumasi.link](https://pumasi.link) · current version: `0.1.10`
+Live relay: [pumasi.link](https://pumasi.link) · current version: `0.1.11`
 
 ## Quickstart
 
@@ -89,8 +89,14 @@ wildcard names, then enable HTTPS and TLS agent ingress:
   -http-addr :80 -https-addr :443 \
   -tls-cert /secure/example.com.crt -tls-key /secure/example.com.key \
   -ssh-addr :2222 -tcp-low 20000 -tcp-high 20099 \
+  -max-tunnels-per-ip 20 -tunnel-starts-per-minute 60 \
+  -max-connections-per-tunnel 64 \
   -reservations /var/lib/pumasi-relay/reservations.json
 ```
+
+These in-memory abuse limits cover both stock SSH and the Pumasi client. They
+reject one source exhausting tunnel slots or one endpoint consuming all relay
+connections without changing the public-access model.
 
 The repository’s hardened systemd unit is
 [`deploy/pumasi-relay.service`](deploy/pumasi-relay.service).

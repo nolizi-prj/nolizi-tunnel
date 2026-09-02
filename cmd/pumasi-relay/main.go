@@ -35,23 +35,26 @@ import (
 
 func main() {
 	var (
-		baseDomain   = flag.String("domain", "pumasi.link", "base domain tunnels are published under")
-		agentAddr    = flag.String("agent-addr", ":7000", "address to accept agent connections on")
-		agentTLSAddr = flag.String("agent-tls-addr", "", "address to accept TLS agent connections on; empty disables it")
-		httpAddr     = flag.String("http-addr", ":8000", "address to accept visitor HTTP on")
-		httpsAddr    = flag.String("https-addr", "", "address to accept visitor HTTPS on; empty disables it")
-		tlsCert      = flag.String("tls-cert", "", "PEM certificate for visitor and agent TLS")
-		tlsKey       = flag.String("tls-key", "", "PEM private key for visitor and agent TLS")
-		tcpLow       = flag.Int("tcp-low", 0, "lowest public port for raw TCP tunnels (0 disables TCP)")
-		tcpHigh      = flag.Int("tcp-high", 0, "highest public port for raw TCP tunnels")
-		tcpBind      = flag.String("tcp-bind", "", "interface to bind public TCP ports on (empty = all)")
-		sshAddr      = flag.String("ssh-addr", "", "address for zero-install ssh tunnelling, e.g. :2222 (empty disables it)")
-		hostKey      = flag.String("ssh-hostkey", "/var/lib/pumasi-relay/ssh_host_ed25519_key", "path to the relay's ssh host key; generated if absent")
-		publicHost   = flag.String("public-host", "", "hostname visitors dial for raw TCP (defaults to -domain)")
-		pubScheme    = flag.String("public-scheme", "http", "scheme tunnel addresses are announced under: http, or https when a TLS terminator sits in front of this relay")
-		resvPath     = flag.String("reservations", "", "file to keep name and port reservations in, so a claim outlives a restart; empty keeps them in memory as before")
-		verbose      = flag.Bool("v", false, "log every routing decision")
-		showVersion  = flag.Bool("version", false, "print the Pumasi Tunnel version and exit")
+		baseDomain     = flag.String("domain", "pumasi.link", "base domain tunnels are published under")
+		agentAddr      = flag.String("agent-addr", ":7000", "address to accept agent connections on")
+		agentTLSAddr   = flag.String("agent-tls-addr", "", "address to accept TLS agent connections on; empty disables it")
+		httpAddr       = flag.String("http-addr", ":8000", "address to accept visitor HTTP on")
+		httpsAddr      = flag.String("https-addr", "", "address to accept visitor HTTPS on; empty disables it")
+		tlsCert        = flag.String("tls-cert", "", "PEM certificate for visitor and agent TLS")
+		tlsKey         = flag.String("tls-key", "", "PEM private key for visitor and agent TLS")
+		tcpLow         = flag.Int("tcp-low", 0, "lowest public port for raw TCP tunnels (0 disables TCP)")
+		tcpHigh        = flag.Int("tcp-high", 0, "highest public port for raw TCP tunnels")
+		tcpBind        = flag.String("tcp-bind", "", "interface to bind public TCP ports on (empty = all)")
+		sshAddr        = flag.String("ssh-addr", "", "address for zero-install ssh tunnelling, e.g. :2222 (empty disables it)")
+		hostKey        = flag.String("ssh-hostkey", "/var/lib/pumasi-relay/ssh_host_ed25519_key", "path to the relay's ssh host key; generated if absent")
+		publicHost     = flag.String("public-host", "", "hostname visitors dial for raw TCP (defaults to -domain)")
+		pubScheme      = flag.String("public-scheme", "http", "scheme tunnel addresses are announced under: http, or https when a TLS terminator sits in front of this relay")
+		resvPath       = flag.String("reservations", "", "file to keep name and port reservations in, so a claim outlives a restart; empty keeps them in memory as before")
+		maxTunnelsIP   = flag.Int("max-tunnels-per-ip", 20, "maximum simultaneous tunnels from one source IP")
+		startsMinute   = flag.Int("tunnel-starts-per-minute", 60, "maximum tunnel connection attempts per source IP per minute")
+		maxTunnelConns = flag.Int("max-connections-per-tunnel", 64, "maximum simultaneous visitor connections per tunnel")
+		verbose        = flag.Bool("v", false, "log every routing decision")
+		showVersion    = flag.Bool("version", false, "print the Pumasi Tunnel version and exit")
 	)
 	flag.Parse()
 	if *showVersion {
@@ -79,7 +82,10 @@ func main() {
 			}
 			return *agentAddr
 		}(),
-		SSHPublicPort: *sshAddr,
+		SSHPublicPort:           *sshAddr,
+		MaxTunnelsPerIP:         *maxTunnelsIP,
+		TunnelStartsPerMinute:   *startsMinute,
+		MaxConnectionsPerTunnel: *maxTunnelConns,
 		// Empty is this relay exactly as every release before it: no file, no
 		// lock, no sweep and no write. With a path, a claimed name and its
 		// public port survive a restart of this process — the connection
