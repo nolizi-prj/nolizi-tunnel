@@ -353,7 +353,7 @@
     if (useSSH) {
       var sshUser = tcp ? "tcp" : (name || "");
       var target = sshUser ? sshUser + "@" + state.base : state.base;
-      parts = ["ssh", "-T", "-o LogLevel=ERROR", "-o ExitOnForwardFailure=yes", "-p " + state.sshPort, "-R 0:localhost:" + port, target];
+      parts = ["ssh", "-T", "-o LogLevel=ERROR", "-o ExitOnForwardFailure=yes", "-p " + state.sshPort, "-R 0:127.0.0.1:" + port, target];
       if (tcpPortEl.value) {
         resultEl.textContent = "A fixed public TCP port requires the Pumasi client. Choose that method to request one.";
       } else {
