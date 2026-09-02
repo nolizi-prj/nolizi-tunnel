@@ -61,6 +61,8 @@
   .step-copy { min-width:0; }
   .step-copy b { display:block;font-size:13px; }
   .step-copy span { display:block;color:var(--muted);font-size:12px; }
+  .install-step { padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--code-bg); }
+  .install-step .command { margin-top: 9px; }
 
   /* Command builder — the page's centre of gravity: a form whose only
      output is the one line to paste. */
@@ -167,7 +169,7 @@
 
   <section>
     <h2>Start a tunnel</h2>
-    <p class="hint">Follow three small steps. Nothing changes on your router or firewall.</p>
+    <p class="hint" id="step-summary">Follow three small steps. Nothing changes on your router or firewall.</p>
 
     <div class="builder-step"><span class="step-number">1</span><div class="step-copy"><b>Choose how to connect</b><span>Stock SSH is fastest for a first tunnel. Use the Pumasi client for fixed or reserved addresses.</span></div></div>
     <div class="field">
@@ -178,14 +180,21 @@
       </div>
     </div>
 
-    <div class="builder-step"><span class="step-number">2</span><div class="step-copy"><b>Tell us what is running locally</b><span>Use HTTP for websites, APIs, and webhooks. Use Raw TCP for SSH, RDP, databases, or other protocols.</span></div></div>
+    <div id="client-install-step" hidden>
+      <div class="builder-step"><span class="step-number">2</span><div class="step-copy"><b>Install the client once</b><span>Run this on Linux or macOS. Windows downloads are available from GitHub Releases.</span></div></div>
+      <div class="install-step">
+        <div class="command"><pre id="install-step-command">curl -fsSL https://pumasi.link/install.sh | sh</pre><button class="ghost" id="copy-install-step" type="button">Copy</button></div>
+      </div>
+    </div>
+
+    <div class="builder-step"><span class="step-number" id="local-step-number">2</span><div class="step-copy"><b>Tell us what is running locally</b><span>Your web app uses local HTTP; visitors receive HTTPS because the relay handles TLS. Use Raw TCP for SSH, RDP, databases, or other protocols.</span></div></div>
     <div class="fields">
       <div class="field">
         <label for="service">Common service</label>
         <select id="service">
-          <option value="8080:http" selected>Web server · 8080</option>
-          <option value="3000:http">Node / React · 3000</option>
-          <option value="8000:http">Python / Django · 8000</option>
+          <option value="8080:http" selected>HTTP web server · 8080</option>
+          <option value="3000:http">HTTP Node / React · 3000</option>
+          <option value="8000:http">HTTP Python / Django · 8000</option>
           <option value="22:tcp">SSH · 22</option>
           <option value="3389:tcp">Windows Remote Desktop · 3389</option>
           <option value="5432:tcp">PostgreSQL · 5432</option>
@@ -199,7 +208,7 @@
         <input type="number" id="port" value="8080" min="1" max="65535">
       </div>
       <div class="field">
-        <label>Kind</label>
+        <label>Local protocol</label>
         <div class="radios">
           <label><input type="radio" name="kind" value="http" checked><span>HTTP</span></label>
           <label><input type="radio" name="kind" value="tcp"><span>Raw TCP</span></label>
@@ -215,7 +224,7 @@
       </div>
     </div>
 
-    <div class="builder-step"><span class="step-number">3</span><div class="step-copy"><b>Run this command</b><span>Paste it into PowerShell, Terminal, or your shell and keep that session open.</span></div></div>
+    <div class="builder-step"><span class="step-number" id="run-step-number">3</span><div class="step-copy"><b>Run this command</b><span>Paste it into PowerShell, Terminal, or your shell and keep that session open.</span></div></div>
     <div class="command">
       <pre id="cmd"></pre>
       <button id="copy" type="button">Copy</button>
@@ -345,6 +354,13 @@
 
   function build() {
     var tcp = kind() === "tcp";
+    var client = method() === "client";
+    document.getElementById("client-install-step").hidden = !client;
+    document.getElementById("local-step-number").textContent = client ? "3" : "2";
+    document.getElementById("run-step-number").textContent = client ? "4" : "3";
+    document.getElementById("step-summary").textContent = client
+      ? "Follow four small steps, including the one-time client install. Nothing changes on your router or firewall."
+      : "Follow three small steps. Nothing changes on your router or firewall.";
     document.getElementById("name-field").hidden = tcp;
     document.getElementById("tcpport-field").hidden = !tcp || method() === "ssh";
 
@@ -366,7 +382,7 @@
           ? "The relay prints the assigned public host and port. Keep this SSH session open."
           : (name
             ? "Publishes at " + name + "." + state.base + ". In SSH, " + name + "@" + state.base + " means tunnel name @ relay host — it is not an email address."
-            : "The relay assigns this tunnel its own unique HTTPS address. Multiple users and tunnels can run at the same time.");
+            : "Each tunnel gets a different HTTPS address (for example, swift-otter." + state.base + "). The relay prints yours after connection; " + state.base + " is only the shared relay.");
       }
     } else if (tcp) {
       parts.push("--tcp");
@@ -387,7 +403,7 @@
     } else if (name) {
       resultEl.innerHTML = "Publishes at <strong>" + name + "." + state.base + "</strong>.";
     } else {
-      resultEl.innerHTML = "The relay assigns this tunnel its own <strong>unique HTTPS address</strong>, printed when it connects. Multiple users and tunnels can run at the same time.";
+      resultEl.innerHTML = "Each tunnel gets a <strong>different HTTPS address</strong> (for example, swift-otter." + escapeHTML(state.base) + "). The relay prints yours after connection; " + escapeHTML(state.base) + " is only the shared relay.";
     }
   }
 
@@ -496,6 +512,9 @@
   });
   document.getElementById("copy-install").addEventListener("click", function () {
     copyFrom(document.getElementById("install"), this);
+  });
+  document.getElementById("copy-install-step").addEventListener("click", function () {
+    copyFrom(document.getElementById("install-step-command"), this);
   });
 
   var feedbackDialog = document.getElementById("feedback-dialog");
