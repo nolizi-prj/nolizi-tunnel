@@ -181,7 +181,7 @@
     </div>
 
     <div id="client-install-step" hidden>
-      <div class="builder-step"><span class="step-number">2</span><div class="step-copy"><b>Install the client once</b><span>Run this on Linux or macOS. Windows downloads are available from GitHub Releases.</span></div></div>
+      <div class="builder-step"><span class="step-number">2</span><div class="step-copy"><b>Install the client if this is your first time</b><span>Already installed? Skip this step. The command supports Linux and macOS; Windows downloads are on GitHub Releases.</span></div></div>
       <div class="install-step">
         <div class="command"><pre id="install-step-command">curl -fsSL https://pumasi.link/install.sh | sh</pre><button class="ghost" id="copy-install-step" type="button">Copy</button></div>
       </div>
@@ -224,7 +224,7 @@
       </div>
     </div>
 
-    <div class="builder-step"><span class="step-number" id="run-step-number">3</span><div class="step-copy"><b>Run this command</b><span>Paste it into PowerShell, Terminal, or your shell and keep that session open.</span></div></div>
+    <div class="builder-step"><span class="step-number" id="run-step-number">3</span><div class="step-copy"><b>Run this command</b><span>Paste it into PowerShell, Terminal, or your shell. Keep it open while sharing; press Ctrl+C to close the tunnel.</span></div></div>
     <div class="command">
       <pre id="cmd"></pre>
       <button id="copy" type="button">Copy</button>
@@ -235,19 +235,6 @@
   <section>
     <h2>Open tunnels <span class="sub" id="count"></span></h2>
     <div id="table-area" class="scroll"></div>
-  </section>
-
-  <section>
-    <h2>Install the Pumasi client <span class="sub">(optional)</span></h2>
-    <p class="hint">Install the checksum-verified static client on Linux or macOS.</p>
-    <div class="command">
-      <pre id="install">curl -fsSL https://pumasi.link/install.sh | sh</pre>
-      <button class="ghost" id="copy-install" type="button">Copy</button>
-    </div>
-    <p class="result">
-      Installs to <span class="mono">~/.local/bin</span>. Apache-2.0 source and Windows downloads are on
-      <a href="https://github.com/pumasi-ai/pumasi-tunnel/releases">GitHub Releases</a>.
-    </p>
   </section>
 
   <section>
@@ -359,7 +346,7 @@
     document.getElementById("local-step-number").textContent = client ? "3" : "2";
     document.getElementById("run-step-number").textContent = client ? "4" : "3";
     document.getElementById("step-summary").textContent = client
-      ? "Follow four small steps, including the one-time client install. Nothing changes on your router or firewall."
+      ? "Follow the guided steps. If the client is already installed, skip step 2. Nothing changes on your router or firewall."
       : "Follow three small steps. Nothing changes on your router or firewall.";
     document.getElementById("name-field").hidden = tcp;
     document.getElementById("tcpport-field").hidden = !tcp || method() === "ssh";
@@ -374,7 +361,7 @@
     if (useSSH) {
       var sshUser = tcp ? "tcp" : (name || "");
       var target = sshUser ? sshUser + "@" + state.base : state.base;
-      parts = ["ssh", "-p " + state.sshPort, "-R 0:localhost:" + port, target];
+      parts = ["ssh", "-N", "-o ExitOnForwardFailure=yes", "-p " + state.sshPort, "-R 0:localhost:" + port, target];
       if (tcpPortEl.value) {
         resultEl.textContent = "A fixed public TCP port requires the Pumasi client. Choose that method to request one.";
       } else {
@@ -509,9 +496,6 @@
   });
   document.getElementById("copy").addEventListener("click", function () {
     copyFrom(cmdEl, this);
-  });
-  document.getElementById("copy-install").addEventListener("click", function () {
-    copyFrom(document.getElementById("install"), this);
   });
   document.getElementById("copy-install-step").addEventListener("click", function () {
     copyFrom(document.getElementById("install-step-command"), this);
