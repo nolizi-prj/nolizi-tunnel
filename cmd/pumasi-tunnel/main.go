@@ -8,34 +8,45 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/pumasi-ai/pumasi-tunnel/agent"
 	"github.com/pumasi-ai/pumasi-tunnel/core"
+	"github.com/pumasi-ai/pumasi-tunnel/internal/buildinfo"
 )
 
 func main() {
 	var (
-		relayAddr = flag.String("relay", "", "relay control address, host:port (required)")
-		subdomain = flag.String("subdomain", "", "request a specific name; omit to be assigned one")
-		token     = flag.String("token", "", "token for a reserved subdomain")
-		host      = flag.String("host", "127.0.0.1", "local host to forward to")
-		tcp       = flag.Bool("tcp", false, "raw TCP tunnel (SSH, RDP, databases) instead of HTTP")
-		tcpPort   = flag.Int("tcp-port", 0, "request this exact public port, so the address survives reconnects")
-		verbose   = flag.Bool("v", false, "log each forwarded stream")
+		relayAddr   = flag.String("relay", "", "relay control address, host:port (required)")
+		subdomain   = flag.String("subdomain", "", "request a specific name; omit to be assigned one")
+		token       = flag.String("token", "", "token for a reserved subdomain")
+		host        = flag.String("host", "127.0.0.1", "local host to forward to")
+		tcp         = flag.Bool("tcp", false, "raw TCP tunnel (SSH, RDP, databases) instead of HTTP")
+		tcpPort     = flag.Int("tcp-port", 0, "request this exact public port, so the address survives reconnects")
+		verbose     = flag.Bool("v", false, "log each forwarded stream")
+		showVersion = flag.Bool("version", false, "print the Pumasi Tunnel version and exit")
+		insecure    = flag.Bool("insecure", false, "use plaintext control transport (self-hosted development only)")
+		tlsName     = flag.String("tls-server-name", "", "TLS server name (defaults to the relay hostname)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: pumasi-tunnel --relay host:port [flags] <local-port>\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("pumasi-tunnel " + buildinfo.Version)
+		return
+	}
 
 	if *relayAddr == "" || flag.NArg() != 1 {
 		flag.Usage()
@@ -68,6 +79,17 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	local := fmt.Sprintf("%s:%d", *host, port)
+	var dial func(context.Context, string) (net.Conn, error)
+	if !*insecure {
+		dialer, err := newTLSDialer(*relayAddr, *tlsName)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "relay must be host:port:", err)
+			os.Exit(2)
+		}
+		dial = func(ctx context.Context, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", addr)
+		}
+	}
 	ag, err := agent.New(agent.Config{
 		RelayAddr: *relayAddr,
 		LocalAddr: local,
@@ -76,6 +98,7 @@ func main() {
 		TCP:       *tcp,
 		TCPPort:   *tcpPort,
 		Logger:    log,
+		Dial:      dial,
 		OnConnect: func(resp core.AuthResponse) {
 			// Printed on every connect, reconnects included, because after a
 			// network flap the first thing a person wants to know is whether
@@ -107,4 +130,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func newTLSDialer(relayAddr, serverName string) (*tls.Dialer, error) {
+	if serverName == "" {
+		var err error
+		serverName, _, err = net.SplitHostPort(relayAddr)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: 10 * time.Second},
+		Config:    &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12},
+	}, nil
 }

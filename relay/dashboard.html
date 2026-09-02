@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pumasi Tunnel</title>
+  <title>Pumasi Tunnel</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232563eb'/%3E%3Cpath d='M18 20h16a10 10 0 0 1 0 20H18m10-10H18' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: light dark;
@@ -32,6 +33,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     background: var(--bg);
@@ -107,6 +109,25 @@
   footer { color: var(--muted); font-size: 12.5px; text-align: center; margin-top: 30px; }
   footer a { color: var(--muted); }
   .scroll { overflow-x: auto; }
+  .feedback-open { position: fixed; right: 20px; bottom: 18px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+  dialog { width: min(92vw, 500px); border: 1px solid var(--border); border-radius: 14px; padding: 0;
+    background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  dialog::backdrop { background: rgba(0,0,0,.55); }
+  .dialog-inner { padding: 22px; }
+  .dialog-head { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px; }
+  .dialog-head h2 { margin:0;color:var(--ink);font-size:18px;text-transform:none; }
+  .icon-button { padding:5px 10px;background:transparent;color:var(--ink);border-color:var(--border);font-size:20px; }
+  .feedback-types { display:flex;gap:7px;margin-bottom:14px; }
+  .feedback-types label { flex:1;padding:8px;border:1px solid var(--border);border-radius:7px;text-align:center;cursor:pointer; }
+  .feedback-types input { position:absolute;opacity:0; }
+  .feedback-types label:has(input:checked) { border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent); }
+  textarea, input[type=email] { width:100%;font:inherit;padding:9px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--ink); }
+  textarea { min-height:120px;resize:vertical; }
+  .feedback-field { display:block;margin:12px 0;font-size:13px;color:var(--muted); }
+  .feedback-field span { display:block;margin-bottom:5px; }
+  .dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:16px; }
+  .feedback-status { min-height:1.5em;color:var(--muted);font-size:13px; }
+  @media(max-width:600px) { .wrap{padding:22px 14px 70px}.command{flex-direction:column}.feedback-open{right:12px;bottom:12px}.fields{display:grid;grid-template-columns:1fr 1fr}.field input{min-width:0;width:100%}.scroll table{min-width:540px} }
 </style>
 </head>
 <body>
@@ -123,7 +144,15 @@
 
   <section>
     <h2>Open a tunnel</h2>
-    <p class="hint">Fill this in, then paste the command on the machine you want to reach.</p>
+    <p class="hint">Choose the no-install SSH path or the Pumasi client, then paste one command.</p>
+
+    <div class="field">
+      <label>Connection method</label>
+      <div class="radios">
+        <label><input type="radio" name="method" value="ssh" checked><span>Stock SSH · no install</span></label>
+        <label><input type="radio" name="method" value="client"><span>Pumasi client</span></label>
+      </div>
+    </div>
 
     <div class="fields">
       <div class="field">
@@ -185,14 +214,33 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
 
   <footer>
     Part of <a href="https://github.com/pumasi-ai/pumasi">Pumasi</a>, a commons of
-    software built by agents and governed by people.
+    software built by agents and governed by people. · <span id="version">Pumasi Tunnel</span>
   </footer>
 </div>
+
+<button type="button" class="feedback-open" id="feedback-open">Send feedback</button>
+<dialog id="feedback-dialog" aria-labelledby="feedback-title">
+  <div class="dialog-inner">
+    <div class="dialog-head"><h2 id="feedback-title">Send feedback</h2><button class="icon-button" type="button" id="feedback-close" aria-label="Close">×</button></div>
+    <form id="feedback-form">
+      <div class="feedback-types">
+        <label><input type="radio" name="type" value="bug" checked>Bug</label>
+        <label><input type="radio" name="type" value="idea">Idea</label>
+        <label><input type="radio" name="type" value="general">Other</label>
+      </div>
+      <label class="feedback-field"><span>What happened or what should improve?</span><textarea id="feedback-description" required minlength="3" maxlength="4000"></textarea></label>
+      <label class="feedback-field"><span>Email (optional)</span><input type="email" id="feedback-contact" maxlength="254" autocomplete="email"></label>
+      <p class="hint">The report includes this page and Pumasi Tunnel version. It does not include tunnel traffic or credentials.</p>
+      <p class="feedback-status" id="feedback-status" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button class="ghost" type="button" id="feedback-cancel">Cancel</button><button type="submit" id="feedback-submit">Submit</button></div>
+    </form>
+  </div>
+</dialog>
 
 <script>
 (function () {
   "use strict";
-  var state = { base: location.hostname, agentPort: "7000" };
+  var state = { base: location.hostname, agentPort: "7001", sshPort: "2222" };
 
   var portEl = document.getElementById("port");
   var nameEl = document.getElementById("name");
@@ -205,6 +253,11 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
     return checked ? checked.value : "http";
   }
 
+  function method() {
+    var checked = document.querySelector('input[name=method]:checked');
+    return checked ? checked.value : "ssh";
+  }
+
   // Names are lowercased here rather than by the relay: a person who types
   // "MyApi" should see what will actually be requested, not discover the
   // difference afterwards.
@@ -215,25 +268,39 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
   function build() {
     var tcp = kind() === "tcp";
     document.getElementById("name-field").hidden = tcp;
-    document.getElementById("tcpport-field").hidden = !tcp;
+    document.getElementById("tcpport-field").hidden = !tcp || method() === "ssh";
 
     var port = parseInt(portEl.value, 10);
     if (!port || port < 1 || port > 65535) port = 8080;
 
+    var useSSH = method() === "ssh" && state.sshPort;
     var parts = ["pumasi-tunnel", "--relay " + state.base + ":" + state.agentPort];
     var name = cleanName(nameEl.value);
 
-    if (tcp) {
+    if (useSSH) {
+      var sshUser = tcp ? "tcp" : (name || "");
+      var target = sshUser ? sshUser + "@" + state.base : state.base;
+      parts = ["ssh", "-p " + state.sshPort, "-R 0:localhost:" + port, target];
+      if (tcpPortEl.value) {
+        resultEl.textContent = "A fixed public TCP port requires the Pumasi client. Choose that method to request one.";
+      } else {
+        resultEl.textContent = tcp
+          ? "The relay prints the assigned public host and port. Keep this SSH session open."
+          : "The relay prints the public HTTPS address. Keep this SSH session open.";
+      }
+    } else if (tcp) {
       parts.push("--tcp");
       var pub = parseInt(tcpPortEl.value, 10);
       if (pub >= 1 && pub <= 65535) parts.push("--tcp-port " + pub);
     } else if (name) {
       parts.push("--subdomain " + name);
     }
-    parts.push(String(port));
+    if (!useSSH) parts.push(String(port));
     cmdEl.textContent = parts.join(" ");
 
-    if (tcp) {
+    if (useSSH) {
+      return;
+    } else if (tcp) {
       resultEl.innerHTML = "Gives you a public <strong>host:port</strong> that any plain " +
         "TCP client can dial — ssh, RDP, a database tool — with nothing installed on " +
         "the far end.";
@@ -318,7 +385,9 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (data) {
         state.base = data.base_domain || state.base;
-        state.agentPort = (data.agent_port || "7000").replace(/^:/, "");
+        state.agentPort = (data.agent_port || "7001").replace(/^:/, "");
+        state.sshPort = (data.ssh_port || "").replace(/^:/, "");
+        document.getElementById("version").textContent = "Pumasi Tunnel v" + (data.version || "unknown");
         document.getElementById("f-domain").textContent = data.base_domain || "—";
         document.getElementById("f-agent").textContent = state.agentPort;
         document.getElementById("f-tcp").textContent = data.tcp_range || "disabled";
@@ -347,6 +416,42 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
   });
   document.getElementById("copy-install").addEventListener("click", function () {
     copyFrom(document.getElementById("install"), this);
+  });
+
+  var feedbackDialog = document.getElementById("feedback-dialog");
+  var feedbackForm = document.getElementById("feedback-form");
+  var feedbackStatus = document.getElementById("feedback-status");
+  document.getElementById("feedback-open").addEventListener("click", function () {
+    feedbackStatus.textContent = "";
+    feedbackDialog.showModal();
+    document.getElementById("feedback-description").focus();
+  });
+  ["feedback-close", "feedback-cancel"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function () { feedbackDialog.close(); });
+  });
+  feedbackForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var submit = document.getElementById("feedback-submit");
+    submit.disabled = true;
+    feedbackStatus.textContent = "Sending…";
+    fetch("/_pumasi/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: new FormData(feedbackForm).get("type"),
+        description: document.getElementById("feedback-description").value,
+        contact: document.getElementById("feedback-contact").value,
+        page: location.href
+      })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) { return { ok: res.ok, body: body }; });
+    }).then(function (result) {
+      if (!result.ok) throw new Error(result.body.error || "Could not send feedback");
+      feedbackStatus.textContent = "Thank you — your feedback was sent.";
+      feedbackForm.reset();
+    }).catch(function (error) {
+      feedbackStatus.textContent = error.message || "Could not send feedback";
+    }).finally(function () { submit.disabled = false; });
   });
 
   build();

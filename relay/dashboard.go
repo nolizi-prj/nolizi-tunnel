@@ -45,8 +45,10 @@ type tunnelView struct {
 }
 
 type statusView struct {
+	Version    string       `json:"version"`
 	BaseDomain string       `json:"base_domain"`
 	AgentPort  string       `json:"agent_port"`
+	SSHPort    string       `json:"ssh_port,omitempty"`
 	TCPRange   string       `json:"tcp_range,omitempty"`
 	Count      int          `json:"count"`
 	Tunnels    []tunnelView `json:"tunnels"`
@@ -88,8 +90,10 @@ func (r *Relay) serveStatus(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	status := statusView{
+		Version:    Version,
 		BaseDomain: r.cfg.BaseDomain,
 		AgentPort:  r.cfg.AgentPublicPort,
+		SSHPort:    r.cfg.SSHPublicPort,
 		Count:      len(views),
 		Tunnels:    views,
 		ServerTime: now.Format(time.RFC3339),

@@ -8,3 +8,5 @@ dist/
 /pumasi-relay
 *.test
 coverage.out
+.playwright-cli/
+output/

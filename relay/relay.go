@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -86,6 +87,15 @@ type Config struct {
 	// builder so a person can copy a command that actually works. Display
 	// only — the listener's address is the caller's business.
 	AgentPublicPort string
+	// SSHPublicPort is the port used by the zero-install stock SSH path.
+	// Empty hides that path from the console.
+	SSHPublicPort string
+	// FeedbackGitHubToken is server-only and creates issues from the console.
+	// Empty disables submission without putting a credential in the browser.
+	FeedbackGitHubToken string
+	FeedbackGitHubRepo  string
+	FeedbackAPIURL      string
+	FeedbackHTTPClient  *http.Client
 }
 
 // Relay accepts agents and serves visitor traffic for them.
@@ -101,9 +111,11 @@ type Relay struct {
 	// closes this and never cfg.Reservations.
 	ownReservations *core.Reservations
 
-	mu           sync.RWMutex
-	sessions     map[string]tunnelSession // agent id -> live client connection
-	tcpListeners map[string][]*tcpListener
+	mu               sync.RWMutex
+	sessions         map[string]tunnelSession // agent id -> live client connection
+	tcpListeners     map[string][]*tcpListener
+	feedbackMu       sync.Mutex
+	feedbackAttempts map[string][]time.Time
 }
 
 // New builds a relay.
@@ -130,6 +142,15 @@ func New(cfg Config) (*Relay, error) {
 	}
 	if cfg.PublicHost == "" {
 		cfg.PublicHost = cfg.BaseDomain
+	}
+	if cfg.FeedbackGitHubRepo == "" {
+		cfg.FeedbackGitHubRepo = "pumasi-ai/pumasi-tunnel"
+	}
+	if cfg.FeedbackAPIURL == "" {
+		cfg.FeedbackAPIURL = "https://api.github.com"
+	}
+	if cfg.FeedbackHTTPClient == nil {
+		cfg.FeedbackHTTPClient = &http.Client{Timeout: 15 * time.Second}
 	}
 	// Validated here, at startup, so an operator's typo is a refusal to start
 	// rather than an address handed to every user of this relay. Before the
@@ -187,14 +208,15 @@ func New(cfg Config) (*Relay, error) {
 	}
 
 	return &Relay{
-		cfg:             cfg,
-		registry:        core.NewRegistry(cfg.BaseDomain, cfg.PublicScheme),
-		log:             cfg.Logger,
-		pool:            pool,
-		reservations:    cfg.Reservations,
-		ownReservations: own,
-		sessions:        make(map[string]tunnelSession),
-		tcpListeners:    make(map[string][]*tcpListener),
+		cfg:              cfg,
+		registry:         core.NewRegistry(cfg.BaseDomain, cfg.PublicScheme),
+		log:              cfg.Logger,
+		pool:             pool,
+		reservations:     cfg.Reservations,
+		ownReservations:  own,
+		sessions:         make(map[string]tunnelSession),
+		tcpListeners:     make(map[string][]*tcpListener),
+		feedbackAttempts: make(map[string][]time.Time),
 	}, nil
 }
 
@@ -530,6 +552,14 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/_pumasi/status":
 			r.serveStatus(w, req)
+		case "/version":
+			writeJSON(w, http.StatusOK, map[string]any{"version": Version})
+		case "/healthz":
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": Version})
+		case "/readyz":
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ready", "version": Version, "tunnels": r.registry.Len()})
+		case "/_pumasi/feedback":
+			r.serveFeedback(w, req)
 		case "/":
 			r.serveDashboard(w, req)
 		default:
@@ -587,6 +617,14 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, req)
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 // notFound answers a request for a hostname nothing serves. It is plain text

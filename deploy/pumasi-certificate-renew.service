@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew the pumasi.link wildcard certificate
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pumasi-renew-certificate

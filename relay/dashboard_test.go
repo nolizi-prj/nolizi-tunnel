@@ -116,3 +116,52 @@ func TestApexUnknownPathIsNotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
 	}
 }
+
+func TestOperationalEndpointsReportOneVersion(t *testing.T) {
+	r, err := relay.New(relay.Config{BaseDomain: "pumasi.link"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	for _, path := range []string{"/version", "/healthz", "/readyz"} {
+		req := httptest.NewRequest(http.MethodGet, "http://pumasi.link"+path, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", path, rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), `"version":"`+relay.Version+`"`) {
+			t.Errorf("%s does not report %s: %s", path, relay.Version, rec.Body.String())
+		}
+	}
+}
+
+func TestConsoleOffersZeroInstallSSHAndFeedback(t *testing.T) {
+	r, err := relay.New(relay.Config{
+		BaseDomain:      "pumasi.link",
+		AgentPublicPort: ":7001",
+		SSHPublicPort:   ":2222",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "https://pumasi.link/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	for _, want := range []string{"Stock SSH", "Pumasi client", "Send feedback", "name=\"method\""} {
+		if !strings.Contains(body, want) {
+			t.Errorf("console missing %q", want)
+		}
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "https://pumasi.link/_pumasi/status", nil)
+	statusRec := httptest.NewRecorder()
+	r.ServeHTTP(statusRec, statusReq)
+	if !strings.Contains(statusRec.Body.String(), `"ssh_port":":2222"`) {
+		t.Errorf("status missing SSH port: %s", statusRec.Body.String())
+	}
+}
