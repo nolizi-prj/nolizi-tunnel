@@ -66,11 +66,13 @@
      output is the one line to paste. */
   .fields { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
   .field { display: flex; flex-direction: column; gap: 5px; }
-  .field label { font-size: 12px; color: var(--muted); }
+  .field label { font-size: 12px; color: var(--muted); white-space: nowrap; }
   input[type=text], input[type=number], select {
     font: inherit; padding: 7px 10px; border-radius: 7px;
     border: 1px solid var(--border); background: var(--bg); color: var(--ink); min-width: 130px;
   }
+  #service { min-width: 210px; }
+  #tcpport { min-width: 190px; }
   input:focus-visible, select:focus-visible, button:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 1px;
   }
@@ -151,7 +153,7 @@
   .image-stage img { max-width:100%;height:auto;display:block;margin:auto; }
   .dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:16px; }
   .feedback-status { min-height:1.5em;color:var(--muted);font-size:13px; }
-  @media(max-width:600px) { .wrap{padding:22px 14px 70px}.command{flex-direction:column}.feedback-open{right:12px;bottom:12px}.fields{display:grid;grid-template-columns:1fr 1fr}.field input{min-width:0;width:100%}.scroll table{min-width:540px} }
+  @media(max-width:600px) { .wrap{padding:22px 14px 70px}.command{flex-direction:column}.feedback-open{right:12px;bottom:12px}.fields{display:grid;grid-template-columns:1fr 1fr}.field input,.field select{min-width:0;width:100%}.scroll table{min-width:540px} }
 </style>
 </head>
 <body>
@@ -179,6 +181,20 @@
     <div class="builder-step"><span class="step-number">2</span><div class="step-copy"><b>Tell us what is running locally</b><span>Use HTTP for websites, APIs, and webhooks. Use Raw TCP for SSH, RDP, databases, or other protocols.</span></div></div>
     <div class="fields">
       <div class="field">
+        <label for="service">Common service</label>
+        <select id="service">
+          <option value="8080:http" selected>Web server · 8080</option>
+          <option value="3000:http">Node / React · 3000</option>
+          <option value="8000:http">Python / Django · 8000</option>
+          <option value="22:tcp">SSH · 22</option>
+          <option value="3389:tcp">Windows Remote Desktop · 3389</option>
+          <option value="5432:tcp">PostgreSQL · 5432</option>
+          <option value="3306:tcp">MySQL · 3306</option>
+          <option value="6379:tcp">Redis · 6379</option>
+          <option value="custom">Custom port…</option>
+        </select>
+      </div>
+      <div class="field">
         <label for="port">Local port</label>
         <input type="number" id="port" value="8080" min="1" max="65535">
       </div>
@@ -195,7 +211,7 @@
       </div>
       <div class="field" id="tcpport-field" hidden>
         <label for="tcpport">Public port <span class="sub">(optional)</span></label>
-        <input type="number" id="tcpport" placeholder="assigned if blank" min="1" max="65535">
+        <input type="number" id="tcpport" placeholder="Auto-assigned" min="1" max="65535">
       </div>
     </div>
 
@@ -293,6 +309,7 @@
   });
 
   var portEl = document.getElementById("port");
+  var serviceEl = document.getElementById("service");
   var nameEl = document.getElementById("name");
   var tcpPortEl = document.getElementById("tcpport");
   var cmdEl = document.getElementById("cmd");
@@ -307,6 +324,17 @@
     var checked = document.querySelector('input[name=method]:checked');
     return checked ? checked.value : "ssh";
   }
+
+  serviceEl.addEventListener("change", function () {
+    if (this.value === "custom") return;
+    var preset = this.value.split(":");
+    portEl.value = preset[0];
+    var kindEl = document.querySelector('input[name=kind][value="' + preset[1] + '"]');
+    if (kindEl) kindEl.checked = true;
+  });
+  portEl.addEventListener("input", function () {
+    serviceEl.value = "custom";
+  });
 
   // Names are lowercased here rather than by the relay: a person who types
   // "MyApi" should see what will actually be requested, not discover the
