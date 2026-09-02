@@ -4,7 +4,7 @@ Publish localhost through one outbound connection. Pumasi Tunnel supports
 HTTPS applications and raw TCP, using either stock `ssh` or one static Go
 client. No account or session timer is required. Apache-2.0.
 
-Live relay: [pumasi.link](https://pumasi.link) · current version: `0.1.9`
+Live relay: [pumasi.link](https://pumasi.link) · current version: `0.1.10`
 
 ## Quickstart
 

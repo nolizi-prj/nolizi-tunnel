@@ -315,13 +315,18 @@
     return checked ? checked.value : "ssh";
   }
 
-  serviceEl.addEventListener("change", function () {
-    if (this.value === "custom") return;
-    var preset = this.value.split(":");
+  function applyServicePreset() {
+    if (serviceEl.value === "custom") return;
+    var preset = serviceEl.value.split(":");
     portEl.value = preset[0];
     var kindEl = document.querySelector('input[name=kind][value="' + preset[1] + '"]');
     if (kindEl) kindEl.checked = true;
-  });
+  }
+  // Browsers dispatch input before change for a select. Handling both on the
+  // control itself prevents the document-level builder from restoring the
+  // old preset between those two events.
+  serviceEl.addEventListener("input", applyServicePreset);
+  serviceEl.addEventListener("change", applyServicePreset);
   // Names are lowercased here rather than by the relay: a person who types
   // "MyApi" should see what will actually be requested, not discover the
   // difference afterwards.

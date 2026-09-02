@@ -143,7 +143,7 @@ func TestConsoleOffersZeroInstallSSHAndFeedback(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	body := rec.Body.String()
-	for _, want := range []string{"Stock SSH", "Pumasi client", ">Feedback</button>", "unique name assigned", "name=\"method\"", "Follow three small steps", "Install the client if this is your first time", "Already installed? Skip this step", "copy-install-step", "press Ctrl+C to close the tunnel", "-T", "LogLevel=ERROR", "ExitOnForwardFailure=yes", "-R 0:127.0.0.1:", "local HTTP; visitors receive HTTPS", "different HTTPS address", "Common service", "Windows Remote Desktop · 3389", "Custom port…", "Auto-assigned", "Ctrl/⌘ ↵", "feedback-image-download", "curl -fsSL https://pumasi.link/install.sh | sh", "modern-screenshot.js"} {
+	for _, want := range []string{"Stock SSH", "Pumasi client", ">Feedback</button>", "unique name assigned", "name=\"method\"", "Follow three small steps", "Install the client if this is your first time", "Already installed? Skip this step", "copy-install-step", "press Ctrl+C to close the tunnel", "applyServicePreset", "serviceEl.addEventListener(\"input\"", "-T", "LogLevel=ERROR", "ExitOnForwardFailure=yes", "-R 0:127.0.0.1:", "local HTTP; visitors receive HTTPS", "different HTTPS address", "Common service", "Windows Remote Desktop · 3389", "Custom port…", "Auto-assigned", "Ctrl/⌘ ↵", "feedback-image-download", "curl -fsSL https://pumasi.link/install.sh | sh", "modern-screenshot.js"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("console missing %q", want)
 		}
