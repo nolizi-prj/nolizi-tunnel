@@ -24,6 +24,9 @@ import (
 //go:embed dashboard.html
 var dashboardHTML []byte
 
+//go:embed modern-screenshot.js
+var modernScreenshotJS []byte
+
 // tunnelView is one row of the live table, shaped for the page rather than
 // for the routing table.
 type tunnelView struct {
@@ -63,6 +66,13 @@ func (r *Relay) serveDashboard(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(dashboardHTML)
+}
+
+func serveModernScreenshot(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(modernScreenshotJS)
 }
 
 // serveStatus is the JSON the page polls. It deliberately exposes only what

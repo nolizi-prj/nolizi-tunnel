@@ -4,7 +4,7 @@ Publish localhost through one outbound connection. Pumasi Tunnel supports
 HTTPS applications and raw TCP, using either stock `ssh` or one static Go
 client. No account or session timer is required. Apache-2.0.
 
-Live relay: [pumasi.link](https://pumasi.link) · current version: `0.1.0`
+Live relay: [pumasi.link](https://pumasi.link) · current version: `0.1.2`
 
 ## Quickstart
 
@@ -26,17 +26,21 @@ Keep the SSH session open. The relay prints the public address.
 ### Native client
 
 ```bash
-go build -o pumasi-tunnel ./cmd/pumasi-tunnel
+curl -fsSL https://pumasi.link/install.sh | sh
 
 # Secure TLS control connection; assigned HTTPS address
-./pumasi-tunnel --relay pumasi.link:7001 8080
+pumasi-tunnel --relay pumasi.link:7001 8080
 
 # Requested hostname
-./pumasi-tunnel --relay pumasi.link:7001 --subdomain myapi 8080
+pumasi-tunnel --relay pumasi.link:7001 --subdomain myapi 8080
 
 # Raw TCP and a fixed public port
-./pumasi-tunnel --relay pumasi.link:7001 --tcp --tcp-port 20050 22
+pumasi-tunnel --relay pumasi.link:7001 --tcp --tcp-port 20050 22
 ```
+
+The installer supports Linux and macOS on amd64 and arm64 and verifies the
+published SHA-256 checksum. Windows binaries and source archives are available
+from [GitHub Releases](https://github.com/pumasi-ai/pumasi-tunnel/releases).
 
 The native client verifies TLS by default. `--insecure` exists only for a
 plaintext self-hosted development relay. A token of at least 16 characters can

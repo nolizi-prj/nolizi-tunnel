@@ -253,10 +253,17 @@ func (r *Relay) sshGreet(chans <-chan ssh.NewChannel, address string) {
 		}
 		go func() {
 			for req := range reqs {
-				// Refuse shell/exec/pty: this is a tunnel endpoint, not a
-				// shell host. Saying no explicitly is what makes that safe.
+				// A stock `ssh -R` without -N asks for a PTY and a shell after
+				// the forward is established. Accept those two requests but do
+				// not execute anything: the already-open channel below is the
+				// whole "shell". Refusing them makes OpenSSH print "shell request
+				// failed" after a successful tunnel, which looks like failure.
 				switch req.Type {
-				case "shell", "exec", "pty-req", "env", "subsystem":
+				case "shell", "pty-req", "window-change":
+					if req.WantReply {
+						req.Reply(true, nil)
+					}
+				case "exec", "env", "subsystem":
 					if req.WantReply {
 						req.Reply(false, nil)
 					}

@@ -87,6 +87,7 @@
     border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
   }
   button.ghost { background: transparent; color: var(--ink); border-color: var(--border); }
+  .button-like { font:inherit;border-radius:7px;padding:8px 15px;border:1px solid var(--border);background:transparent;color:var(--ink); }
   button:active { transform: translateY(1px); }
   .result { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
   .result strong { color: var(--ink); font-weight: 600; }
@@ -125,6 +126,19 @@
   textarea { min-height:120px;resize:vertical; }
   .feedback-field { display:block;margin:12px 0;font-size:13px;color:var(--muted); }
   .feedback-field span { display:block;margin-bottom:5px; }
+  .feedback-tools { display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0; }
+  .feedback-tools label { display:inline-flex;align-items:center;cursor:pointer; }
+  .feedback-tools input { position:absolute;width:1px;height:1px;opacity:0; }
+  .feedback-previews { display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0; }
+  .feedback-preview { min-width:0;padding:7px;border:1px solid var(--border);border-radius:8px;background:var(--code-bg); }
+  .feedback-preview img { width:100%;height:88px;object-fit:cover;border-radius:5px;display:block;margin-bottom:5px; }
+  .feedback-preview-row { display:flex;align-items:center;justify-content:space-between;gap:5px;font-size:11px; }
+  .feedback-preview-row span { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .feedback-remove { padding:2px 6px;background:transparent;color:var(--muted);border-color:var(--border);font-size:11px; }
+  .feedback-diag { margin:12px 0;color:var(--muted);font-size:12px; }
+  .feedback-diag summary { cursor:pointer;color:var(--ink);font-weight:600; }
+  .feedback-diag pre { white-space:pre-wrap;overflow-wrap:anywhere;padding:9px;background:var(--code-bg);border-radius:7px;max-height:150px;overflow:auto; }
+  .feedback-issue { color:var(--accent);font-weight:600; }
   .dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:16px; }
   .feedback-status { min-height:1.5em;color:var(--muted);font-size:13px; }
   @media(max-width:600px) { .wrap{padding:22px 14px 70px}.command{flex-direction:column}.feedback-open{right:12px;bottom:12px}.fields{display:grid;grid-template-columns:1fr 1fr}.field input{min-width:0;width:100%}.scroll table{min-width:540px} }
@@ -167,8 +181,8 @@
         </div>
       </div>
       <div class="field" id="name-field">
-        <label for="name">Name <span class="sub">(optional)</span></label>
-        <input type="text" id="name" placeholder="assigned if blank" autocomplete="off" spellcheck="false">
+        <label for="name">Custom name <span class="sub">(optional)</span></label>
+        <input type="text" id="name" placeholder="unique name assigned" autocomplete="off" spellcheck="false">
       </div>
       <div class="field" id="tcpport-field" hidden>
         <label for="tcpport">Public port <span class="sub">(optional)</span></label>
@@ -190,15 +204,14 @@
 
   <section>
     <h2>First time here</h2>
-    <p class="hint">The client is a single static binary with no dependencies.</p>
+    <p class="hint">Install the checksum-verified static client on Linux or macOS.</p>
     <div class="command">
-      <pre id="install">git clone https://github.com/pumasi-ai/pumasi-tunnel &amp;&amp; cd pumasi-tunnel
-go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
+      <pre id="install">curl -fsSL https://pumasi.link/install.sh | sh</pre>
       <button class="ghost" id="copy-install" type="button">Copy</button>
     </div>
     <p class="result">
-      Apache-2.0, and the relay is the same repository — you are free to run your own
-      rather than use this one.
+      Installs to <span class="mono">~/.local/bin</span>. Apache-2.0 source and Windows downloads are on
+      <a href="https://github.com/pumasi-ai/pumasi-tunnel/releases">GitHub Releases</a>.
     </p>
   </section>
 
@@ -218,7 +231,7 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
   </footer>
 </div>
 
-<button type="button" class="feedback-open" id="feedback-open">Send feedback</button>
+<button type="button" class="feedback-open" id="feedback-open">Feedback</button>
 <dialog id="feedback-dialog" aria-labelledby="feedback-title">
   <div class="dialog-inner">
     <div class="dialog-head"><h2 id="feedback-title">Send feedback</h2><button class="icon-button" type="button" id="feedback-close" aria-label="Close">×</button></div>
@@ -226,21 +239,40 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
       <div class="feedback-types">
         <label><input type="radio" name="type" value="bug" checked>Bug</label>
         <label><input type="radio" name="type" value="idea">Idea</label>
-        <label><input type="radio" name="type" value="general">Other</label>
+        <label><input type="radio" name="type" value="question">Question</label>
       </div>
-      <label class="feedback-field"><span>What happened or what should improve?</span><textarea id="feedback-description" required minlength="3" maxlength="4000"></textarea></label>
+      <label class="feedback-field"><span>What happened or what should improve?</span><textarea id="feedback-description" required minlength="3" maxlength="5000" placeholder="Describe the problem, idea, or question in detail"></textarea></label>
       <label class="feedback-field"><span>Email (optional)</span><input type="email" id="feedback-contact" maxlength="254" autocomplete="email"></label>
-      <p class="hint">The report includes this page and Pumasi Tunnel version. It does not include tunnel traffic or credentials.</p>
+      <div class="feedback-tools">
+        <label class="ghost button-like"><input type="file" id="feedback-files" accept="image/png,image/jpeg,image/webp" multiple>Attach images</label>
+        <button class="ghost" type="button" id="feedback-capture">Capture screen</button>
+        <span class="sub">PNG, JPEG, or WebP · up to 5 · 4 MB each</span>
+      </div>
+      <div class="feedback-previews" id="feedback-previews"></div>
+      <details class="feedback-diag"><summary>Included diagnostics · full transparency</summary><pre id="feedback-diagnostics"></pre></details>
+      <p class="hint">You can also paste screenshots here. The report never includes tunnel traffic, tokens, cookies, or URL query values. Press Ctrl/⌘+Enter to submit.</p>
       <p class="feedback-status" id="feedback-status" role="status" aria-live="polite"></p>
       <div class="dialog-actions"><button class="ghost" type="button" id="feedback-cancel">Cancel</button><button type="submit" id="feedback-submit">Submit</button></div>
     </form>
   </div>
 </dialog>
 
+<script src="/_pumasi/modern-screenshot.js"></script>
 <script>
 (function () {
   "use strict";
   var state = { base: location.hostname, agentPort: "7001", sshPort: "2222" };
+  var browserErrors = [];
+  window.addEventListener("error", function (event) {
+    browserErrors.push({
+      message: String(event.message || "Browser error").slice(0, 500),
+      source: String(event.filename || "").slice(0, 256),
+      line: event.lineno || 0,
+      column: event.colno || 0,
+      timestamp: new Date().toISOString()
+    });
+    browserErrors = browserErrors.slice(-5);
+  });
 
   var portEl = document.getElementById("port");
   var nameEl = document.getElementById("name");
@@ -286,7 +318,9 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
       } else {
         resultEl.textContent = tcp
           ? "The relay prints the assigned public host and port. Keep this SSH session open."
-          : "The relay prints the public HTTPS address. Keep this SSH session open.";
+          : (name
+            ? "Publishes at " + name + "." + state.base + ". In SSH, " + name + "@" + state.base + " means tunnel name @ relay host — it is not an email address."
+            : "The relay assigns this tunnel its own unique HTTPS address. Multiple users and tunnels can run at the same time.");
       }
     } else if (tcp) {
       parts.push("--tcp");
@@ -307,7 +341,7 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
     } else if (name) {
       resultEl.innerHTML = "Publishes at <strong>" + name + "." + state.base + "</strong>.";
     } else {
-      resultEl.innerHTML = "Publishes at a name the relay assigns, printed when it connects.";
+      resultEl.innerHTML = "The relay assigns this tunnel its own <strong>unique HTTPS address</strong>, printed when it connects. Multiple users and tunnels can run at the same time.";
     }
   }
 
@@ -421,19 +455,152 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
   var feedbackDialog = document.getElementById("feedback-dialog");
   var feedbackForm = document.getElementById("feedback-form");
   var feedbackStatus = document.getElementById("feedback-status");
+  var feedbackImages = [];
+
+  function diagnostics() {
+    return {
+      version: document.getElementById("version").textContent.replace("Pumasi Tunnel v", ""),
+      page: location.origin + location.pathname,
+      viewport: window.innerWidth + "×" + window.innerHeight,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown",
+      browser: navigator.userAgent,
+      online: navigator.onLine,
+      recentErrors: browserErrors
+    };
+  }
+
+  function renderDiagnostics() {
+    document.getElementById("feedback-diagnostics").textContent = JSON.stringify(diagnostics(), null, 2);
+  }
+
+  function renderFeedbackImages() {
+    var area = document.getElementById("feedback-previews");
+    area.innerHTML = "";
+    feedbackImages.forEach(function (item, index) {
+      var card = document.createElement("div");
+      card.className = "feedback-preview";
+      var img = document.createElement("img");
+      img.src = item.data;
+      img.alt = "Attachment preview " + (index + 1);
+      var row = document.createElement("div");
+      row.className = "feedback-preview-row";
+      var name = document.createElement("span");
+      name.textContent = item.name;
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "feedback-remove";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", function () {
+        feedbackImages.splice(index, 1);
+        renderFeedbackImages();
+      });
+      row.appendChild(name);
+      row.appendChild(remove);
+      card.appendChild(img);
+      card.appendChild(row);
+      area.appendChild(card);
+    });
+  }
+
+  function addFeedbackFiles(files) {
+    Array.prototype.forEach.call(files || [], function (file) {
+      if (feedbackImages.length >= 5) {
+        feedbackStatus.textContent = "You can attach up to 5 images.";
+        return;
+      }
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        feedbackStatus.textContent = "Attachments must be PNG, JPEG, or WebP images.";
+        return;
+      }
+      if (file.size > 4 * 1024 * 1024) {
+        feedbackStatus.textContent = "Each image must be 4 MB or smaller.";
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function () {
+        feedbackImages.push({ name: file.name || "image", data: String(reader.result) });
+        renderFeedbackImages();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function capturePagePreview() {
+    if (!window.modernScreenshot || !window.modernScreenshot.domToBlob || feedbackImages.length) return;
+    feedbackStatus.textContent = "Capturing a removable page screenshot…";
+    window.modernScreenshot.domToBlob(document.querySelector(".wrap"), {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      backgroundColor: getComputedStyle(document.body).backgroundColor,
+      maximumCanvasSize: 16000000
+    }).then(function (blob) {
+      if (!feedbackImages.length && blob) {
+        addFeedbackFiles([new File([blob], "page-screenshot.png", { type: "image/png" })]);
+      }
+      feedbackStatus.textContent = "";
+    }).catch(function () {
+      feedbackStatus.textContent = "Automatic page screenshot was unavailable; you can attach or capture one manually.";
+    });
+  }
+
   document.getElementById("feedback-open").addEventListener("click", function () {
     feedbackStatus.textContent = "";
+    renderDiagnostics();
     feedbackDialog.showModal();
     document.getElementById("feedback-description").focus();
+    capturePagePreview();
   });
   ["feedback-close", "feedback-cancel"].forEach(function (id) {
     document.getElementById(id).addEventListener("click", function () { feedbackDialog.close(); });
+  });
+  document.getElementById("feedback-files").addEventListener("change", function (event) {
+    addFeedbackFiles(event.target.files);
+    event.target.value = "";
+  });
+  feedbackDialog.addEventListener("paste", function (event) {
+    var images = Array.prototype.filter.call(event.clipboardData && event.clipboardData.files || [], function (file) {
+      return file.type.indexOf("image/") === 0;
+    });
+    if (images.length) {
+      event.preventDefault();
+      addFeedbackFiles(images);
+    }
+  });
+  document.getElementById("feedback-capture").addEventListener("click", function () {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      feedbackStatus.textContent = "Screen capture is not supported by this browser.";
+      return;
+    }
+    navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "browser" }, audio: false }).then(function (stream) {
+      var video = document.createElement("video");
+      video.srcObject = stream;
+      return video.play().then(function () {
+        var scale = Math.min(1, 1600 / video.videoWidth);
+        var canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        canvas.toBlob(function (blob) {
+          if (blob) addFeedbackFiles([new File([blob], "screen-capture.jpg", { type: "image/jpeg" })]);
+        }, "image/jpeg", 0.85);
+      });
+    }).catch(function (error) {
+      if (error && error.name !== "NotAllowedError") feedbackStatus.textContent = "Could not capture the screen.";
+    });
+  });
+  feedbackForm.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      feedbackForm.requestSubmit();
+    }
   });
   feedbackForm.addEventListener("submit", function (event) {
     event.preventDefault();
     var submit = document.getElementById("feedback-submit");
     submit.disabled = true;
     feedbackStatus.textContent = "Sending…";
+    var diag = diagnostics();
     fetch("/_pumasi/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -441,14 +608,31 @@ go build -o pumasi-tunnel ./cmd/pumasi-tunnel</pre>
         type: new FormData(feedbackForm).get("type"),
         description: document.getElementById("feedback-description").value,
         contact: document.getElementById("feedback-contact").value,
-        page: location.href
+        page: diag.page,
+        viewport: diag.viewport,
+        timezone: diag.timezone,
+        user_agent: diag.browser,
+        online: diag.online,
+        errors: browserErrors,
+        images: feedbackImages
       })
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (body) { return { ok: res.ok, body: body }; });
     }).then(function (result) {
       if (!result.ok) throw new Error(result.body.error || "Could not send feedback");
-      feedbackStatus.textContent = "Thank you — your feedback was sent.";
+      feedbackStatus.textContent = "Thank you — your feedback was sent. ";
+      if (result.body.issue_url) {
+        var link = document.createElement("a");
+        link.href = result.body.issue_url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.className = "feedback-issue";
+        link.textContent = "View issue ↗";
+        feedbackStatus.appendChild(link);
+      }
       feedbackForm.reset();
+      feedbackImages = [];
+      renderFeedbackImages();
     }).catch(function (error) {
       feedbackStatus.textContent = error.message || "Could not send feedback";
     }).finally(function () { submit.disabled = false; });

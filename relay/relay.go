@@ -560,6 +560,10 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"status": "ready", "version": Version, "tunnels": r.registry.Len()})
 		case "/_pumasi/feedback":
 			r.serveFeedback(w, req)
+		case "/install.sh":
+			serveInstallScript(w, req)
+		case "/_pumasi/modern-screenshot.js":
+			serveModernScreenshot(w, req)
 		case "/":
 			r.serveDashboard(w, req)
 		default:

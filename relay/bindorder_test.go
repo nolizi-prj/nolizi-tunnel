@@ -390,6 +390,35 @@ func TestSSHIsNotToldAnAddressItCannotBeGiven(t *testing.T) {
 	}
 }
 
+func TestStockSSHSessionDoesNotReportFailureAfterTunnelOpens(t *testing.T) {
+	port := bindOrderPorts(t)
+	b := newBindOrderRelay(t, "pumasi.link", port, port+9)
+	_, client := b.sshGreetingWithClient(t, "myapi")
+
+	ch, reqs, err := client.OpenChannel("session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ch.Close()
+	go ssh.DiscardRequests(reqs)
+	for _, request := range []string{"pty-req", "shell", "window-change"} {
+		accepted, err := ch.SendRequest(request, true, nil)
+		if err != nil {
+			t.Fatalf("%s request: %v", request, err)
+		}
+		if !accepted {
+			t.Errorf("%s request was refused after the tunnel opened", request)
+		}
+	}
+	accepted, err := ch.SendRequest("exec", true, []byte("whoami"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted {
+		t.Error("relay accepted command execution")
+	}
+}
+
 // B-3 · Agent path, no lookup. On a TCP-only relay the subdomain lookup these
 // paths used to make fails for every session, because core.SplitHost("x.", "")
 // is ErrForeignHost. The address announced must still be one that answers.

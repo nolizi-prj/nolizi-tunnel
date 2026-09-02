@@ -1,7 +1,7 @@
 # Pumasi Tunnel stage
 
 **Stage:** Alpha<br>
-**Release:** `0.1.0`<br>
+**Release:** `0.1.2`<br>
 **Verified:** 2026-09-02 on `https://pumasi.link`
 
 Phase 1 is complete. This is still Alpha because there are no external
@@ -15,7 +15,7 @@ customers, one relay/region, and no sustained availability evidence.
 - real local HTTP service reached through `https://phase1e2e.pumasi.link`
 - persistent raw TCP tunnel reconnects on port `20000`
 - reservations use `/var/lib/pumasi-relay/reservations.json`
-- `/version` and `/readyz` report `0.1.0`
+- `/version` and `/readyz` report the current release
 - browser feedback created GitHub issue #1; the test issue was then closed
 - desktop and 390px browser flows passed with no console warnings/errors
 - certificate renewal timer completed a successful live check

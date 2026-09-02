@@ -152,7 +152,7 @@ func TestConsoleOffersZeroInstallSSHAndFeedback(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	body := rec.Body.String()
-	for _, want := range []string{"Stock SSH", "Pumasi client", "Send feedback", "name=\"method\""} {
+	for _, want := range []string{"Stock SSH", "Pumasi client", ">Feedback</button>", "unique name assigned", "name=\"method\"", "curl -fsSL https://pumasi.link/install.sh | sh", "modern-screenshot.js"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("console missing %q", want)
 		}
@@ -163,5 +163,28 @@ func TestConsoleOffersZeroInstallSSHAndFeedback(t *testing.T) {
 	r.ServeHTTP(statusRec, statusReq)
 	if !strings.Contains(statusRec.Body.String(), `"ssh_port":":2222"`) {
 		t.Errorf("status missing SSH port: %s", statusRec.Body.String())
+	}
+}
+
+func TestInstallerAndScreenshotLibraryAreServedFromApex(t *testing.T) {
+	r, err := relay.New(relay.Config{BaseDomain: "pumasi.link"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	checks := []struct {
+		path, contentType, body string
+	}{
+		{"/install.sh", "text/x-shellscript", "checksums.txt"},
+		{"/_pumasi/modern-screenshot.js", "text/javascript", "modernScreenshot"},
+	}
+	for _, check := range checks {
+		req := httptest.NewRequest(http.MethodGet, "http://pumasi.link"+check.path, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), check.contentType) || !strings.Contains(rec.Body.String(), check.body) {
+			t.Errorf("%s status=%d type=%q", check.path, rec.Code, rec.Header().Get("Content-Type"))
+		}
 	}
 }

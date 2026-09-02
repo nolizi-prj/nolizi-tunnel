@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
 	"time"
 )
 
@@ -120,7 +119,7 @@ func OpenReservations(path string, log *slog.Logger) (*Reservations, error) {
 	if err != nil {
 		return nil, fmt.Errorf("core: reservation store lock: %w", err)
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := lockFile(lock); err != nil {
 		lock.Close()
 		return nil, fmt.Errorf("%w: %s", ErrStoreLocked, path)
 	}
@@ -153,7 +152,7 @@ func (r *Reservations) Close() error {
 	r.store.lock = nil
 	// Unlocked implicitly by the close; done explicitly so a caller reading
 	// this does not have to know that.
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = unlockFile(f)
 	return f.Close()
 }
 
