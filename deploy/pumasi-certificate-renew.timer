@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily pumasi.link certificate renewal check
+Description=Daily tunnel.nolizi.com certificate renewal check
 
 [Timer]
 OnCalendar=daily

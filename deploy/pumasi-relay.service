@@ -1,6 +1,6 @@
 [Unit]
-Description=Pumasi Tunnel relay
-Documentation=https://github.com/pumasi-ai/pumasi-tunnel
+Description=Nolizi Tunnel relay
+Documentation=https://github.com/nolizi-prj/nolizi-tunnel
 After=network-online.target
 Wants=network-online.target
 
@@ -11,15 +11,15 @@ EnvironmentFile=-/etc/pumasi-relay/environment
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ExecStart=/usr/local/bin/pumasi-relay \
-  -domain pumasi.link \
-  -public-host pumasi.link \
+  -domain tunnel.nolizi.com \
+  -public-host tunnel.nolizi.com \
   -public-scheme https \
   -agent-addr 127.0.0.1:7000 \
   -agent-tls-addr :7001 \
   -http-addr :80 \
   -https-addr :443 \
-  -tls-cert /etc/pumasi-relay/tls/pumasi.link.crt \
-  -tls-key /etc/pumasi-relay/tls/pumasi.link.key \
+  -tls-cert /etc/pumasi-relay/tls/tunnel.nolizi.com.crt \
+  -tls-key /etc/pumasi-relay/tls/tunnel.nolizi.com.key \
   -tcp-low 20000 -tcp-high 20099 \
   -ssh-addr :2222 \
   -ssh-hostkey /var/lib/pumasi-relay/ssh_host_ed25519_key \

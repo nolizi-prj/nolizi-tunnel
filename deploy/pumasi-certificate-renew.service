@@ -1,5 +1,5 @@
 [Unit]
-Description=Renew the pumasi.link wildcard certificate
+Description=Renew the tunnel.nolizi.com wildcard certificate
 After=network-online.target
 
 [Service]
